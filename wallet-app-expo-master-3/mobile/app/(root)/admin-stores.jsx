@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import { useCallback } from 'react';
 import { storeAPI } from '../../lib/api';
 import { setAuthToken } from '../../lib/api';
 import { COLORS } from '../../constants/colors';
@@ -11,14 +12,23 @@ export default function AdminStoresScreen() {
   const router = useRouter();
   const { getToken } = useAuth();
   const [stores, setStores] = useState([]);
-  const [storeName, setStoreName] = useState('');
-  const [storeAddress, setStoreAddress] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [isAdding, setIsAdding] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     initializeAndFetch();
   }, []);
+
+  // Refresh data when screen comes into focus (after adding/editing)
+  useFocusEffect(
+    useCallback(() => {
+      // Skip refresh on initial mount, only refresh when returning to screen
+      const shouldRefresh = stores.length > 0;
+      if (shouldRefresh && !isLoading) {
+        handleRefresh();
+      }
+    }, [stores.length, isLoading])
+  );
 
   const initializeAndFetch = async () => {
     try {
@@ -32,8 +42,10 @@ export default function AdminStoresScreen() {
     }
   };
 
-  const fetchStores = async () => {
-    setIsLoading(true);
+  const fetchStores = async (showLoading = true) => {
+    if (showLoading) {
+      setIsLoading(true);
+    }
     try {
       const response = await storeAPI.getAll();
       setStores(response.data);
@@ -41,32 +53,22 @@ export default function AdminStoresScreen() {
       console.error('Error fetching stores:', error);
       Alert.alert('Error', 'Failed to load stores');
     } finally {
-      setIsLoading(false);
+      if (showLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
-  const addStore = async () => {
-    if (!storeName.trim()) {
-      Alert.alert('Error', 'Please enter a store name');
-      return;
-    }
-
-    setIsAdding(true);
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
     try {
-      await storeAPI.create({
-        store_name: storeName,
-        location: { address: storeAddress || 'To be updated' },
-        assigned_pc_id: null
-      });
-      
-      Alert.alert('Success', 'Store added successfully');
-      setStoreName('');
-      setStoreAddress('');
-      fetchStores();
+      const response = await storeAPI.getAll();
+      setStores(response.data);
     } catch (error) {
-      Alert.alert('Error', 'Failed to add store');
+      console.error('Error refreshing stores:', error);
+      Alert.alert('Error', 'Failed to refresh stores');
     } finally {
-      setIsAdding(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -100,37 +102,11 @@ export default function AdminStoresScreen() {
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Manage Stores</Text>
-        <TouchableOpacity onPress={() => router.push('/add-store')}>
-          <Ionicons name="add-circle" size={28} color={COLORS.primary} />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.addSection}>
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Store name *"
-            placeholderTextColor={COLORS.textMuted}
-            value={storeName}
-            onChangeText={setStoreName}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Address (optional)"
-            placeholderTextColor={COLORS.textMuted}
-            value={storeAddress}
-            onChangeText={setStoreAddress}
-          />
-        </View>
-        <TouchableOpacity 
-          style={[styles.addButton, isAdding && styles.addButtonDisabled]} 
-          onPress={addStore}
-          disabled={isAdding}
-        >
-          {isAdding ? (
-            <ActivityIndicator color={COLORS.white} />
+        <TouchableOpacity onPress={handleRefresh} disabled={isRefreshing}>
+          {isRefreshing ? (
+            <ActivityIndicator size="small" color={COLORS.primary} />
           ) : (
-            <Ionicons name="add" size={24} color={COLORS.white} />
+            <Ionicons name="refresh" size={24} color={COLORS.primary} />
           )}
         </TouchableOpacity>
       </View>
@@ -143,7 +119,7 @@ export default function AdminStoresScreen() {
         <>
           <TouchableOpacity 
             style={styles.mapAddButton}
-            onPress={() => router.push('/add-store')}
+            onPress={() => router.push('/edit-store')}
           >
             <Ionicons name="map" size={24} color={COLORS.white} />
             <Text style={styles.mapAddButtonText}>Add Store with Map</Text>
@@ -153,6 +129,8 @@ export default function AdminStoresScreen() {
           <FlatList
           data={stores}
           keyExtractor={(item) => item.id.toString()}
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
           renderItem={({ item }) => (
             <View style={styles.storeItem}>
               <View style={styles.storeIcon}>
@@ -165,6 +143,12 @@ export default function AdminStoresScreen() {
                 </Text>
               </View>
               <TouchableOpacity 
+                onPress={() => router.push(`/edit-store?id=${item.id}`)}
+                style={styles.editButton}
+              >
+                <Ionicons name="create-outline" size={20} color={COLORS.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity 
                 onPress={() => deleteStore(item.id, item.store_name)}
                 style={styles.deleteButton}
               >
@@ -176,7 +160,7 @@ export default function AdminStoresScreen() {
             <View style={styles.emptyContainer}>
               <Ionicons name="storefront-outline" size={64} color={COLORS.textMuted} />
               <Text style={styles.emptyText}>No stores yet</Text>
-              <Text style={styles.emptySubtext}>Add your first store above</Text>
+              <Text style={styles.emptySubtext}>Tap "Add Store with Map" to get started</Text>
             </View>
           }
         />
@@ -198,34 +182,6 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.borderLight,
   },
   headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text },
-  addSection: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 12,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
-  },
-  inputContainer: { flex: 1, gap: 8 },
-  input: {
-    backgroundColor: COLORS.backgroundLight,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    fontSize: 14,
-    color: COLORS.text,
-  },
-  addButton: {
-    backgroundColor: COLORS.primary,
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-  },
-  addButtonDisabled: { backgroundColor: COLORS.textMuted },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -270,6 +226,10 @@ const styles = StyleSheet.create({
   storeInfo: { flex: 1 },
   storeName: { fontSize: 16, fontWeight: '600', color: COLORS.text },
   storeDetails: { fontSize: 14, color: COLORS.textLight, marginTop: 4 },
+  editButton: {
+    padding: 8,
+    marginRight: 4,
+  },
   deleteButton: {
     padding: 8,
   },

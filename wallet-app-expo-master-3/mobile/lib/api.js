@@ -48,6 +48,8 @@ export const userAPI = {
   createOrUpdate: (data) => api.post('/users', data),
   getByClerkId: (clerkId) => api.get(`/users/clerk/${clerkId}`),
   getAll: (role) => api.get('/users', { params: { role } }),
+  updateRole: (id, role) => api.patch(`/users/${id}/role`, { role }),
+  delete: (id) => api.delete(`/users/${id}`),
 };
 
 // Store API
@@ -97,6 +99,28 @@ export const promotionAPI = {
   getAll: (active) => api.get('/promotions', { params: { active } }),
   getById: (id) => api.get(`/promotions/${id}`),
   delete: (id) => api.delete(`/promotions/${id}`),
+};
+
+// Store Visit API
+export const storeVisitAPI = {
+  checkIn: (data) => api.post('/store-visits/check-in', data),
+  checkOut: (data) => api.post('/store-visits/check-out', data),
+  getCurrent: () => api.get('/store-visits/current'),
+  getHistory: (params) => api.get('/store-visits/history', { params }),
+  validateAccess: (storeId) => api.get('/store-visits/validate-access', { params: { store_id: storeId } }),
+};
+
+// Approval API
+export const approvalAPI = {
+  getPending: (params) => api.get('/approvals/pending', { params }),
+  approveOSA: (id) => api.post(`/approvals/osa/${id}/approve`),
+  rejectOSA: (id, reason) => api.post(`/approvals/osa/${id}/reject`, { reason }),
+  approveDisplay: (id) => api.post(`/approvals/display/${id}/approve`),
+  rejectDisplay: (id, reason) => api.post(`/approvals/display/${id}/reject`, { reason }),
+  approveSurvey: (id) => api.post(`/approvals/survey/${id}/approve`),
+  rejectSurvey: (id, reason) => api.post(`/approvals/survey/${id}/reject`, { reason }),
+  getRejected: () => api.get('/approvals/rejected'),
+  getStats: (params) => api.get('/approvals/stats', { params }),
 };
 
 export default api;

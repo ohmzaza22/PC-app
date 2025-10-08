@@ -14,7 +14,7 @@ export default function Page() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   
-  const { user: dbUser, userRole, initUser, isLoading } = useAuthStore();
+  const { user: dbUser, userRole, initUser, refreshUser, isLoading } = useAuthStore();
   const { fetchStores } = useStoreStore();
 
   useEffect(() => {
@@ -37,6 +37,8 @@ export default function Page() {
   const onRefresh = async () => {
     setRefreshing(true);
     if (dbUser) {
+      // Refresh user data from database to get latest role
+      await refreshUser();
       await fetchStores(userRole === 'PC' ? dbUser.id : null);
     }
     setRefreshing(false);
@@ -44,6 +46,15 @@ export default function Page() {
 
   // PC modules - field operations
   const pcModules = [
+    {
+      id: 'checkin',
+      title: 'Check In',
+      subtitle: 'Check in to store',
+      icon: 'location',
+      color: COLORS.success,
+      route: '/check-in',
+      featured: true,
+    },
     {
       id: 'osa',
       title: 'On-Shelf Availability',
@@ -75,6 +86,35 @@ export default function Page() {
       icon: 'megaphone',
       color: COLORS.module4,
       route: '/promotions',
+    },
+  ];
+
+  // Supervisor modules
+  const supervisorModules = [
+    {
+      id: 'mc-dashboard',
+      title: 'MC Dashboard',
+      subtitle: 'Review pending tasks',
+      icon: 'stats-chart',
+      color: COLORS.primary,
+      route: '/mc-dashboard',
+      featured: true,
+    },
+    {
+      id: 'review-tasks',
+      title: 'Review Tasks',
+      subtitle: 'Approve or reject submissions',
+      icon: 'checkmark-done',
+      color: COLORS.warning,
+      route: '/review-tasks',
+    },
+    {
+      id: 'visit-history',
+      title: 'Visit History',
+      subtitle: 'View PC check-ins',
+      icon: 'time',
+      color: COLORS.info,
+      route: '/visit-history',
     },
   ];
 
@@ -114,16 +154,16 @@ export default function Page() {
     },
   ];
 
-  // Supervisor modules - oversight
-  const supervisorModules = [
+  // Add rejected tasks module for PC
+  const pcModulesWithRejected = [
     ...pcModules,
     {
-      id: 'verify',
-      title: 'Verify Submissions',
-      subtitle: 'Review PC submissions',
-      icon: 'checkmark-done',
-      color: COLORS.success,
-      route: '/supervisor-verify',
+      id: 'rejected',
+      title: 'Rejected Tasks',
+      subtitle: 'Tasks needing correction',
+      icon: 'alert-circle',
+      color: COLORS.error,
+      route: '/rejected-tasks',
     },
   ];
 
@@ -137,6 +177,8 @@ export default function Page() {
       case 'SALES':
       case 'VENDOR':
         return [adminModules[3]]; // Only promotions
+      case 'PC':
+        return pcModulesWithRejected;
       default:
         return pcModules;
     }

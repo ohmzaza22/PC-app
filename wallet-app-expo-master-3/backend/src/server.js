@@ -7,6 +7,8 @@ import rateLimiter from "./middleware/rateLimiter.js";
 // Import new routes
 import userRoute from "./routes/userRoute.js";
 import storeRoute from "./routes/storeRoute.js";
+import storeVisitRoute from "./routes/storeVisitRoute.js";
+import approvalRoute from "./routes/approvalRoute.js";
 import osaRoute from "./routes/osaRoute.js";
 import displayRoute from "./routes/displayRoute.js";
 import surveyRoute from "./routes/surveyRoute.js";
@@ -44,6 +46,8 @@ app.get("/api/health", (req, res) => {
 // API Routes
 app.use("/api/users", userRoute);
 app.use("/api/stores", storeRoute);
+app.use("/api/store-visits", storeVisitRoute);
+app.use("/api/approvals", approvalRoute);
 app.use("/api/osa", osaRoute);
 app.use("/api/displays", displayRoute);
 app.use("/api/surveys", surveyRoute);

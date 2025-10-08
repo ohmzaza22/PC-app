@@ -46,16 +46,14 @@ export default function AdminUsersScreen() {
 
   const changeUserRole = async (userId, newRole) => {
     try {
-      await userAPI.createOrUpdate({
-        id: userId,
-        role: newRole,
-      });
+      await userAPI.updateRole(userId, newRole);
       Alert.alert('Success', `User role changed to ${newRole}`);
       setShowRoleModal(false);
       setSelectedUser(null);
       fetchUsers();
     } catch (error) {
-      Alert.alert('Error', 'Failed to change user role');
+      console.error('Error changing role:', error);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to change user role');
     }
   };
 
