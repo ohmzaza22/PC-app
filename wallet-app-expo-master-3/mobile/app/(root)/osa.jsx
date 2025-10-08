@@ -76,14 +76,48 @@ export default function OSAScreen() {
     }
   };
 
+  const addProduct = (productName) => {
+    const newProduct = {
+      id: Date.now().toString(),
+      name: productName,
+      quantity: '',
+      stockLevel: 'Full',
+      remarks: '',
+    };
+    setProducts([...products, newProduct]);
+    setShowAddProduct(false);
+  };
+
+  const removeProduct = (productId) => {
+    setProducts(products.filter(p => p.id !== productId));
+  };
+
+  const updateProduct = (productId, field, value) => {
+    setProducts(products.map(p => 
+      p.id === productId ? { ...p, [field]: value } : p
+    ));
+  };
+
   const handleSubmit = async () => {
     if (!selectedStore) {
       Alert.alert('Error', 'Please select a store');
       return;
     }
 
+    if (products.length === 0) {
+      Alert.alert('Error', 'Please add at least one product');
+      return;
+    }
+
     if (!photo) {
       Alert.alert('Error', 'Please take a photo');
+      return;
+    }
+
+    // Validate all products have quantity
+    const missingQty = products.some(p => !p.quantity || p.quantity === '0');
+    if (missingQty) {
+      Alert.alert('Error', 'Please enter quantity for all products');
       return;
     }
 
@@ -93,7 +127,7 @@ export default function OSAScreen() {
       const formData = new FormData();
       formData.append('store_id', selectedStore.id);
       formData.append('remarks', remarks);
-      formData.append('availability', JSON.stringify(availability));
+      formData.append('products', JSON.stringify(products));
       
       formData.append('photo', {
         uri: photo.uri,
@@ -244,42 +278,112 @@ export default function OSAScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Availability Checklist */}
+        {/* Products List */}
         <View style={styles.section}>
-          <Text style={styles.label}>Stock Status</Text>
-          <View style={styles.checklistContainer}>
-            <TouchableOpacity
-              style={styles.checklistItem}
-              onPress={() => setAvailability({ ...availability, inStock: !availability.inStock })}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.label}>Products *</Text>
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => setShowAddProduct(true)}
             >
-              <View style={[styles.checkbox, availability.inStock && styles.checkboxChecked]}>
-                {availability.inStock && <Ionicons name="checkmark" size={16} color="#FFF" />}
-              </View>
-              <Text style={styles.checklistText}>Product In Stock</Text>
+              <Ionicons name="add-circle" size={24} color="#3B82F6" />
+              <Text style={styles.addButtonText}>Add Product</Text>
             </TouchableOpacity>
+          </View>
 
-            <View style={styles.stockLevelContainer}>
-              <Text style={styles.stockLevelLabel}>Stock Level:</Text>
-              {['full', 'medium', 'low'].map((level) => (
-                <TouchableOpacity
-                  key={level}
-                  style={[
-                    styles.stockLevelButton,
-                    availability.stockLevel === level && styles.stockLevelButtonActive
-                  ]}
-                  onPress={() => setAvailability({ ...availability, stockLevel: level })}
-                >
-                  <Text style={[
-                    styles.stockLevelButtonText,
-                    availability.stockLevel === level && styles.stockLevelButtonTextActive
-                  ]}>
-                    {level.charAt(0).toUpperCase() + level.slice(1)}
-                  </Text>
+          {products.length === 0 ? (
+            <View style={styles.emptyProducts}>
+              <Ionicons name="cube-outline" size={48} color="#9CA3AF" />
+              <Text style={styles.emptyText}>No products added yet</Text>
+              <Text style={styles.emptySubtext}>Tap "Add Product" to start</Text>
+            </View>
+          ) : (
+            products.map((product) => (
+              <View key={product.id} style={styles.productCard}>
+                <View style={styles.productHeader}>
+                  <Text style={styles.productName}>{product.name}</Text>
+                  <TouchableOpacity onPress={() => removeProduct(product.id)}>
+                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.productRow}>
+                  <View style={styles.productInputGroup}>
+                    <Text style={styles.productLabel}>Quantity</Text>
+                    <TextInput
+                      style={styles.productInput}
+                      placeholder="0"
+                      keyboardType="numeric"
+                      value={product.quantity}
+                      onChangeText={(text) => updateProduct(product.id, 'quantity', text)}
+                    />
+                  </View>
+
+                  <View style={styles.productInputGroup}>
+                    <Text style={styles.productLabel}>Stock Level</Text>
+                    <View style={styles.dropdownContainer}>
+                      {['Full', 'Medium', 'Low'].map((level) => (
+                        <TouchableOpacity
+                          key={level}
+                          style={[
+                            styles.dropdownButton,
+                            product.stockLevel === level && styles.dropdownButtonActive
+                          ]}
+                          onPress={() => updateProduct(product.id, 'stockLevel', level)}
+                        >
+                          <Text style={[
+                            styles.dropdownText,
+                            product.stockLevel === level && styles.dropdownTextActive
+                          ]}>
+                            {level}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.productInputGroup}>
+                  <Text style={styles.productLabel}>Remarks (Optional)</Text>
+                  <TextInput
+                    style={styles.productTextInput}
+                    placeholder="Add notes for this product..."
+                    placeholderTextColor="#9CA3AF"
+                    value={product.remarks}
+                    onChangeText={(text) => updateProduct(product.id, 'remarks', text)}
+                  />
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        {/* Product Selection Modal */}
+        {showAddProduct && (
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Product</Text>
+                <TouchableOpacity onPress={() => setShowAddProduct(false)}>
+                  <Ionicons name="close" size={24} color="#374151" />
                 </TouchableOpacity>
-              ))}
+              </View>
+              <ScrollView style={styles.productList}>
+                {availableProducts.map((productName) => (
+                  <TouchableOpacity
+                    key={productName}
+                    style={styles.productOption}
+                    onPress={() => addProduct(productName)}
+                  >
+                    <Ionicons name="cube" size={20} color="#3B82F6" />
+                    <Text style={styles.productOptionText}>{productName}</Text>
+                    <Ionicons name="add-circle-outline" size={20} color="#3B82F6" />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
           </View>
-        </View>
+        )}
 
         {/* Remarks */}
         <View style={styles.section}>
@@ -471,6 +575,163 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
     color: '#6B7280',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  addButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
+  emptyProducts: {
+    padding: 40,
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 12,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 4,
+  },
+  productCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  productHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  productName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  productRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  productInputGroup: {
+    flex: 1,
+  },
+  productLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 6,
+  },
+  productInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#111827',
+  },
+  productTextInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    color: '#111827',
+  },
+  dropdownContainer: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  dropdownButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFF',
+    alignItems: 'center',
+  },
+  dropdownButtonActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  dropdownText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  dropdownTextActive: {
+    color: '#FFF',
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    width: '90%',
+    maxHeight: '80%',
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  productList: {
+    maxHeight: 400,
+  },
+  productOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    gap: 12,
+  },
+  productOptionText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#111827',
   },
   checklistContainer: {
     backgroundColor: '#FFF',
