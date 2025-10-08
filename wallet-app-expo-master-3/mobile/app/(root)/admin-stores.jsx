@@ -100,7 +100,9 @@ export default function AdminStoresScreen() {
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Manage Stores</Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity onPress={() => router.push('/add-store')}>
+          <Ionicons name="add-circle" size={28} color={COLORS.primary} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.addSection}>
@@ -138,7 +140,17 @@ export default function AdminStoresScreen() {
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
       ) : (
-        <FlatList
+        <>
+          <TouchableOpacity 
+            style={styles.mapAddButton}
+            onPress={() => router.push('/add-store')}
+          >
+            <Ionicons name="map" size={24} color={COLORS.white} />
+            <Text style={styles.mapAddButtonText}>Add Store with Map</Text>
+            <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
+          </TouchableOpacity>
+          
+          <FlatList
           data={stores}
           keyExtractor={(item) => item.id.toString()}
           renderItem={({ item }) => (
@@ -168,6 +180,7 @@ export default function AdminStoresScreen() {
             </View>
           }
         />
+        </>
       )}
     </View>
   );
@@ -217,6 +230,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  mapAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: COLORS.primary,
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+  },
+  mapAddButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.white,
   },
   storeItem: {
     flexDirection: 'row',

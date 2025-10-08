@@ -2,15 +2,52 @@ import { sql } from "../config/db.js";
 
 export async function createStore(req, res) {
   try {
-    const { store_name, location, assigned_pc_id } = req.body;
+    const { 
+      store_name, 
+      store_code, 
+      location, 
+      store_type, 
+      contact_person, 
+      phone_number, 
+      assigned_pc_id 
+    } = req.body;
 
     if (!store_name) {
       return res.status(400).json({ message: "Store name is required" });
     }
 
+    if (!store_code) {
+      return res.status(400).json({ message: "Store code is required" });
+    }
+
+    // Check if store code already exists
+    const existingStore = await sql`
+      SELECT id FROM stores WHERE store_code = ${store_code}
+    `;
+
+    if (existingStore.length > 0) {
+      return res.status(400).json({ message: "Store code already exists" });
+    }
+
     const store = await sql`
-      INSERT INTO stores(store_name, location, assigned_pc_id)
-      VALUES (${store_name}, ${JSON.stringify(location)}, ${assigned_pc_id})
+      INSERT INTO stores(
+        store_name, 
+        store_code, 
+        location, 
+        store_type, 
+        contact_person, 
+        phone_number, 
+        assigned_pc_id
+      )
+      VALUES (
+        ${store_name}, 
+        ${store_code}, 
+        ${JSON.stringify(location)}, 
+        ${store_type || 'RETAIL'}, 
+        ${contact_person}, 
+        ${phone_number}, 
+        ${assigned_pc_id}
+      )
       RETURNING *
     `;
 
@@ -75,12 +112,35 @@ export async function getStoreById(req, res) {
 export async function updateStore(req, res) {
   try {
     const { id } = req.params;
-    const { store_name, location, assigned_pc_id } = req.body;
+    const { 
+      store_name, 
+      store_code, 
+      location, 
+      store_type, 
+      contact_person, 
+      phone_number, 
+      assigned_pc_id 
+    } = req.body;
+
+    // If store_code is being updated, check if it already exists
+    if (store_code) {
+      const existingStore = await sql`
+        SELECT id FROM stores WHERE store_code = ${store_code} AND id != ${id}
+      `;
+
+      if (existingStore.length > 0) {
+        return res.status(400).json({ message: "Store code already exists" });
+      }
+    }
 
     const store = await sql`
       UPDATE stores
       SET store_name = COALESCE(${store_name}, store_name),
-          location = COALESCE(${JSON.stringify(location)}, location),
+          store_code = COALESCE(${store_code}, store_code),
+          location = COALESCE(${location ? JSON.stringify(location) : null}, location),
+          store_type = COALESCE(${store_type}, store_type),
+          contact_person = COALESCE(${contact_person}, contact_person),
+          phone_number = COALESCE(${phone_number}, phone_number),
           assigned_pc_id = COALESCE(${assigned_pc_id}, assigned_pc_id)
       WHERE id = ${id}
       RETURNING *

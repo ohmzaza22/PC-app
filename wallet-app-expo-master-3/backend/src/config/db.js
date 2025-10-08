@@ -21,7 +21,11 @@ export async function initDB() {
     await sql`CREATE TABLE IF NOT EXISTS stores (
       id SERIAL PRIMARY KEY,
       store_name TEXT NOT NULL,
+      store_code TEXT UNIQUE,
       location JSONB,
+      store_type TEXT CHECK (store_type IN ('RETAIL','HOSPITAL','PHARMACY','SUPERMARKET','CONVENIENCE','OTHER')),
+      contact_person TEXT,
+      phone_number TEXT,
       assigned_pc_id INT REFERENCES users(id),
       created_at TIMESTAMP DEFAULT NOW()
     )`;
