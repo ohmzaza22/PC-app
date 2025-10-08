@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import PageHeader from '../../components/PageHeader';
 import { promotionAPI } from '../../lib/api';
 
 export default function PromotionsScreen() {
@@ -83,13 +84,7 @@ export default function PromotionsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Promotions</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <PageHeader title="Promotions" />
 
       {/* Filter Toggle */}
       <View style={styles.filterContainer}>

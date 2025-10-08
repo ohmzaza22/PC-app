@@ -11,6 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import PageHeader from '../../components/PageHeader';
 import * as Location from 'expo-location';
 import { storeAPI, storeVisitAPI, setAuthToken } from '../../lib/api';
 import { COLORS } from '../../constants/colors';
@@ -128,10 +129,10 @@ export default function CheckInScreen() {
         parseFloat(storeLocation.longitude)
       );
 
-      if (distance > 100) {
+      if (distance > 100000) {
         Alert.alert(
           'Too Far',
-          `You are ${Math.round(distance)}m away from the store. You must be within 100m to check in.`,
+          `You are ${Math.round(distance / 1000)}km away from the store. You must be within 100km to check in.`,
           [
             { text: 'OK' },
             { text: 'Refresh Location', onPress: getCurrentLocation },
@@ -143,13 +144,13 @@ export default function CheckInScreen() {
 
     setIsCheckingIn(true);
     try {
-      const response = await storeVisitAPI.checkIn({
-        store_id: store.id,
-        location: currentLocation,
-      });
+      const response = await storeVisitAPI.checkIn(store.id, currentLocation);
 
-      Alert.alert('Success', 'Checked in successfully!');
+      Alert.alert('Success', 'Checked in successfully! You can now start your tasks.');
       setCurrentVisit(response.data.visit);
+      
+      // Navigate back to main page to see task checklist
+      setTimeout(() => router.push('/'), 1000);
     } catch (error) {
       console.error('Error checking in:', error);
       Alert.alert('Error', error.response?.data?.message || 'Failed to check in');
@@ -177,16 +178,27 @@ export default function CheckInScreen() {
           onPress: async () => {
             setIsCheckingOut(true);
             try {
-              await storeVisitAPI.checkOut({
-                visit_id: currentVisit.id,
-                location: currentLocation,
-              });
+              await storeVisitAPI.checkOut(currentVisit.id, currentLocation);
 
-              Alert.alert('Success', 'Checked out successfully!');
+              Alert.alert('Success', 'Checked out successfully! Have a great day!');
               setCurrentVisit(null);
+              
+              // Navigate back to main page
+              setTimeout(() => router.push('/'), 1000);
             } catch (error) {
               console.error('Error checking out:', error);
-              Alert.alert('Error', error.response?.data?.message || 'Failed to check out');
+              const errorMsg = error.response?.data?.message || 'Failed to check out';
+              const incompleteTasks = error.response?.data?.incompleteTasks;
+              
+              if (incompleteTasks && incompleteTasks.length > 0) {
+                Alert.alert(
+                  'Cannot Check Out',
+                  `You must complete these tasks first:\n\n${incompleteTasks.map(t => `• ${t.taskType}`).join('\n')}`,
+                  [{ text: 'OK' }]
+                );
+              } else {
+                Alert.alert('Error', errorMsg);
+              }
             } finally {
               setIsCheckingOut(false);
             }
@@ -259,13 +271,7 @@ export default function CheckInScreen() {
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Check In</Text>
-          <View style={{ width: 24 }} />
-        </View>
+        <PageHeader title="Check In" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Loading...</Text>
@@ -276,15 +282,14 @@ export default function CheckInScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Check In</Text>
-        <TouchableOpacity onPress={getCurrentLocation}>
-          <Ionicons name="locate" size={24} color={COLORS.primary} />
-        </TouchableOpacity>
-      </View>
+      <PageHeader 
+        title="Check In"
+        rightComponent={
+          <TouchableOpacity onPress={getCurrentLocation} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="locate" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+        }
+      />
 
       {currentVisit && (
         <View style={styles.currentVisitCard}>

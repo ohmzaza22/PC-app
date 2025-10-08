@@ -14,6 +14,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import PageHeader from '../../components/PageHeader';
 import { approvalAPI, setAuthToken } from '../../lib/api';
 import { COLORS } from '../../constants/colors';
 
@@ -224,13 +225,7 @@ export default function ReviewTasksScreen() {
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Review Tasks</Text>
-          <View style={{ width: 24 }} />
-        </View>
+        <PageHeader title="Review Tasks" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
@@ -240,17 +235,14 @@ export default function ReviewTasksScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          Review Tasks {type ? `(${type.toUpperCase()})` : ''}
-        </Text>
-        <TouchableOpacity onPress={fetchTasks}>
-          <Ionicons name="refresh" size={24} color={COLORS.primary} />
-        </TouchableOpacity>
-      </View>
+      <PageHeader 
+        title={`Review Tasks${type ? ` (${type.toUpperCase()})` : ''}`}
+        rightComponent={
+          <TouchableOpacity onPress={fetchTasks} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="refresh" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+        }
+      />
 
       <FlatList
         data={tasks}

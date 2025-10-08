@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback } from 'react';
 import { storeAPI } from '../../lib/api';
 import { setAuthToken } from '../../lib/api';
 import { COLORS } from '../../constants/colors';
+import PageHeader from '../../components/PageHeader';
 
 export default function AdminStoresScreen() {
   const router = useRouter();
@@ -97,19 +97,22 @@ export default function AdminStoresScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Manage Stores</Text>
-        <TouchableOpacity onPress={handleRefresh} disabled={isRefreshing}>
-          {isRefreshing ? (
-            <ActivityIndicator size="small" color={COLORS.primary} />
-          ) : (
-            <Ionicons name="refresh" size={24} color={COLORS.primary} />
-          )}
-        </TouchableOpacity>
-      </View>
+      <PageHeader 
+        title="Manage Stores"
+        rightComponent={
+          <TouchableOpacity 
+            onPress={handleRefresh} 
+            disabled={isRefreshing}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            {isRefreshing ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <Ionicons name="refresh" size={24} color={COLORS.primary} />
+            )}
+          </TouchableOpacity>
+        }
+      />
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
@@ -172,16 +175,6 @@ export default function AdminStoresScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
-  },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',

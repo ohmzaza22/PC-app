@@ -1,60 +1,186 @@
-import { useUser } from "@clerk/clerk-expo";
+import { useUser, useAuth } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
-import { RefreshControl, ScrollView, Text, TouchableOpacity, View, StyleSheet } from "react-native";
+import { RefreshControl, ScrollView, Text, TouchableOpacity, View, StyleSheet, Dimensions } from "react-native";
 import { SignOutButton } from "@/components/SignOutButton";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import PageLoader from "../../components/PageLoader";
+import CheckInStatus from "../../components/CheckInStatus";
+import MapView, { Marker, Circle } from "react-native-maps";
+import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useStoreStore } from "../../store/useStoreStore";
+import { setAuthToken, storeVisitAPI } from "../../lib/api";
 import { COLORS } from "../../constants/colors";
+
+const { width } = Dimensions.get('window');
 
 export default function Page() {
   const { user } = useUser();
+  const { getToken } = useAuth();
   const router = useRouter();
+  const mapRef = useRef(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentVisit, setCurrentVisit] = useState(null);
+  const [tasks, setTasks] = useState([]);
+  const [taskStats, setTaskStats] = useState(null);
+  const [currentLocation, setCurrentLocation] = useState(null);
   
   const { user: dbUser, userRole, initUser, refreshUser, isLoading } = useAuthStore();
-  const { fetchStores } = useStoreStore();
+  const { fetchStores, stores } = useStoreStore();
 
+  // Initialize user once on mount
   useEffect(() => {
-    if (user) {
-      initUser(user);
-    }
+    const initializeUser = async () => {
+      if (user) {
+        try {
+          const token = await getToken();
+          await initUser(user, token);
+        } catch (error) {
+          console.error('Error initializing user:', error);
+        }
+      }
+    };
+    
+    initializeUser();
   }, [user]);
 
+  // Load stores and current visit after user is initialized
   useEffect(() => {
-    if (dbUser) {
-      // Fetch stores assigned to this PC
+    if (dbUser && userRole) {
+      const storeId = userRole === 'PC' ? dbUser.id : null;
+      fetchStores(storeId).catch(err => console.error('Error loading stores:', err));
+      
+      // Fetch current visit for PC users
       if (userRole === 'PC') {
-        fetchStores(dbUser.id);
-      } else {
-        fetchStores();
+        fetchCurrentVisit();
+        getCurrentLocation();
       }
     }
   }, [dbUser, userRole]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    if (dbUser) {
-      // Refresh user data from database to get latest role
-      await refreshUser();
-      await fetchStores(userRole === 'PC' ? dbUser.id : null);
+  const getCurrentLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Location permission not granted');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      setCurrentLocation({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+
+      // Fit map to show all markers after getting location
+      setTimeout(() => {
+        fitMapToMarkers();
+      }, 500);
+    } catch (error) {
+      console.error('Error getting location:', error);
     }
-    setRefreshing(false);
   };
 
-  // PC modules - field operations
-  const pcModules = [
-    {
-      id: 'checkin',
-      title: 'Check In',
-      subtitle: 'Check in to store',
-      icon: 'location',
-      color: COLORS.success,
-      route: '/check-in',
-      featured: true,
-    },
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371e3;
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+  };
+
+  const fitMapToMarkers = () => {
+    if (!mapRef.current || !currentLocation || !stores || stores.length === 0) return;
+
+    const markers = stores
+      .map(store => {
+        const loc = typeof store.location === 'string' ? JSON.parse(store.location) : store.location;
+        if (loc.latitude && loc.longitude) {
+          return {
+            latitude: parseFloat(loc.latitude),
+            longitude: parseFloat(loc.longitude),
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    // Add current location
+    markers.push({
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+    });
+
+    if (markers.length > 0) {
+      mapRef.current.fitToCoordinates(markers, {
+        edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+        animated: true,
+      });
+    }
+  };
+
+  const fetchCurrentVisit = async () => {
+    try {
+      // Ensure we have a valid token before making the request
+      const token = await getToken();
+      if (!token) {
+        console.log('No auth token available');
+        return;
+      }
+      setAuthToken(token);
+      
+      const response = await storeVisitAPI.getCurrent();
+      setCurrentVisit(response.data.visit);
+      setTasks(response.data.tasks || []);
+      setTaskStats(response.data.stats || null);
+    } catch (error) {
+      // Silently handle 403/404 errors (user not checked in or no permission)
+      if (error.response?.status === 403 || error.response?.status === 404) {
+        setCurrentVisit(null);
+        setTasks([]);
+        setTaskStats(null);
+      } else {
+        console.error('Error fetching current visit:', error);
+      }
+    }
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    if (dbUser) {
+      try {
+        // Get fresh token and refresh user data
+        const token = await getToken();
+        if (token) {
+          setAuthToken(token);
+        }
+        await refreshUser();
+        await fetchStores(userRole === 'PC' ? dbUser.id : null);
+        
+        // Refresh current visit for PC users
+        if (userRole === 'PC') {
+          await fetchCurrentVisit();
+        }
+      } catch (error) {
+        console.error('Error refreshing:', error);
+      }
+    }
+    setRefreshing(false);
+  }, [dbUser, userRole, getToken, refreshUser, fetchStores]);
+
+  // Memoize module arrays to prevent recreation on every render
+  const pcModules = useMemo(() => [
     {
       id: 'osa',
       title: 'On-Shelf Availability',
@@ -87,10 +213,9 @@ export default function Page() {
       color: COLORS.module4,
       route: '/promotions',
     },
-  ];
+  ], []);
 
-  // Supervisor modules
-  const supervisorModules = [
+  const supervisorModules = useMemo(() => [
     {
       id: 'mc-dashboard',
       title: 'MC Dashboard',
@@ -116,10 +241,9 @@ export default function Page() {
       color: COLORS.info,
       route: '/visit-history',
     },
-  ];
+  ], []);
 
-  // Admin modules - management
-  const adminModules = [
+  const adminModules = useMemo(() => [
     {
       id: 'stores',
       title: 'Manage Stores',
@@ -152,10 +276,9 @@ export default function Page() {
       color: COLORS.module4,
       route: '/promotions',
     },
-  ];
+  ], []);
 
-  // Add rejected tasks module for PC
-  const pcModulesWithRejected = [
+  const pcModulesWithRejected = useMemo(() => [
     ...pcModules,
     {
       id: 'rejected',
@@ -165,10 +288,10 @@ export default function Page() {
       color: COLORS.error,
       route: '/rejected-tasks',
     },
-  ];
+  ], [pcModules]);
 
-  // Select modules based on role
-  const getModules = () => {
+  // Memoize module selection
+  const modules = useMemo(() => {
     switch (userRole) {
       case 'ADMIN':
         return adminModules;
@@ -182,9 +305,7 @@ export default function Page() {
       default:
         return pcModules;
     }
-  };
-
-  const modules = getModules();
+  }, [userRole, adminModules, supervisorModules, pcModulesWithRejected, pcModules]);
 
   if (isLoading) return <PageLoader />;
 
@@ -215,6 +336,137 @@ export default function Page() {
             <Text style={styles.roleBadgeText}>{userRole || 'PC'} Dashboard</Text>
           </View>
         </View>
+
+        {/* CHECK-IN STATUS (PC Only) */}
+        {userRole === 'PC' && (
+          <CheckInStatus 
+            currentVisit={currentVisit}
+            tasks={tasks}
+            stats={taskStats}
+            onRefresh={fetchCurrentVisit}
+          />
+        )}
+
+        {/* MAP VIEW (PC Only) */}
+        {userRole === 'PC' && currentLocation && stores && stores.length > 0 && (
+          <View style={styles.mapSection}>
+            <View style={styles.mapHeader}>
+              <Text style={styles.mapTitle}>Store Locations</Text>
+              <TouchableOpacity
+                style={styles.centerMapButton}
+                onPress={fitMapToMarkers}
+              >
+                <Ionicons name="locate" size={16} color={COLORS.primary} />
+                <Text style={styles.centerMapText}>Center Map</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.mapContainer}>
+              <MapView
+                ref={mapRef}
+                style={styles.map}
+                initialRegion={{
+                  latitude: currentLocation.latitude,
+                  longitude: currentLocation.longitude,
+                  latitudeDelta: 0.5,
+                  longitudeDelta: 0.5,
+                }}
+              >
+                {/* Current Location Marker */}
+                <Marker
+                  coordinate={{
+                    latitude: currentLocation.latitude,
+                    longitude: currentLocation.longitude,
+                  }}
+                  title="Your Location"
+                >
+                  <View style={styles.currentLocationMarker}>
+                    <Ionicons name="person" size={20} color={COLORS.white} />
+                  </View>
+                </Marker>
+
+                {/* 100km Radius Circle */}
+                <Circle
+                  center={{
+                    latitude: currentLocation.latitude,
+                    longitude: currentLocation.longitude,
+                  }}
+                  radius={100000}
+                  fillColor="rgba(59, 130, 246, 0.1)"
+                  strokeColor={COLORS.primary}
+                  strokeWidth={1}
+                />
+
+                {/* Store Markers */}
+                {stores.map((store) => {
+                  const storeLocation = typeof store.location === 'string' 
+                    ? JSON.parse(store.location) 
+                    : store.location;
+                  
+                  if (!storeLocation.latitude || !storeLocation.longitude) return null;
+
+                  const distance = calculateDistance(
+                    currentLocation.latitude,
+                    currentLocation.longitude,
+                    parseFloat(storeLocation.latitude),
+                    parseFloat(storeLocation.longitude)
+                  );
+
+                  const isNearby = distance <= 100000;
+                  const distanceText = distance < 1000 
+                    ? `${Math.round(distance)}m` 
+                    : `${(distance / 1000).toFixed(1)}km`;
+
+                  return (
+                    <Marker
+                      key={store.id}
+                      coordinate={{
+                        latitude: parseFloat(storeLocation.latitude),
+                        longitude: parseFloat(storeLocation.longitude),
+                      }}
+                      title={store.store_name}
+                      description={`${distanceText} away`}
+                      onPress={() => {
+                        // Optional: Navigate to store details or check-in
+                      }}
+                    >
+                      <View style={[
+                        styles.storeMarker,
+                        { backgroundColor: isNearby ? COLORS.success : COLORS.warning }
+                      ]}>
+                        <Ionicons name="storefront" size={20} color={COLORS.white} />
+                      </View>
+                    </Marker>
+                  );
+                })}
+              </MapView>
+            </View>
+
+            {/* Store Count Info */}
+            <View style={styles.mapFooter}>
+              <View style={styles.mapLegend}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: COLORS.success }]} />
+                  <Text style={styles.legendText}>Within 100km ({stores.filter(s => {
+                    const loc = typeof s.location === 'string' ? JSON.parse(s.location) : s.location;
+                    if (!loc.latitude || !loc.longitude) return false;
+                    const dist = calculateDistance(
+                      currentLocation.latitude,
+                      currentLocation.longitude,
+                      parseFloat(loc.latitude),
+                      parseFloat(loc.longitude)
+                    );
+                    return dist <= 100000;
+                  }).length})</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: COLORS.warning }]} />
+                  <Text style={styles.legendText}>Beyond 100km</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* MODULE CARDS */}
         <View style={styles.modulesContainer}>
@@ -311,6 +563,103 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 14,
     fontWeight: '600',
+  },
+  mapSection: {
+    marginBottom: 24,
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  mapTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  centerMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  centerMapText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  mapContainer: {
+    height: 400,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  map: {
+    width: '100%',
+    height: '100%',
+  },
+  currentLocationMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  storeMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  mapFooter: {
+    marginTop: 12,
+  },
+  mapLegend: {
+    flexDirection: 'row',
+    gap: 20,
+    paddingHorizontal: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  legendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  legendText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '500',
   },
   modulesContainer: {
     marginTop: 8,

@@ -14,6 +14,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import PageHeader from '../../components/PageHeader';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { storeAPI, setAuthToken } from '../../lib/api';
@@ -296,13 +297,7 @@ export default function EditStoreScreen() {
   if (isLoadingStore) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Loading...</Text>
-          <View style={{ width: 24 }} />
-        </View>
+        <PageHeader title="Loading..." />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Loading store details...</Text>
@@ -317,14 +312,7 @@ export default function EditStoreScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{isEditMode ? 'Edit Store' : 'Add New Store'}</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <PageHeader title={isEditMode ? 'Edit Store' : 'Add New Store'} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Form Section */}

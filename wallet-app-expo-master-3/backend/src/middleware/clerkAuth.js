@@ -1,4 +1,5 @@
 import { clerkClient } from "@clerk/clerk-sdk-node";
+import { sql } from "../config/db.js";
 
 export async function verifyClerkToken(req, res, next) {
   try {
@@ -29,8 +30,19 @@ export async function verifyClerkToken(req, res, next) {
 export function requireRole(...allowedRoles) {
   return async (req, res, next) => {
     try {
-      const user = await clerkClient.users.getUser(req.clerkId);
-      const userRole = user.publicMetadata?.role;
+      // Get user from database to check role
+      const dbUser = await sql`
+        SELECT id, role FROM users WHERE clerk_id = ${req.clerkId}
+      `;
+
+      if (dbUser.length === 0) {
+        return res.status(404).json({ 
+          message: "User not found in database. Please complete registration."
+        });
+      }
+
+      const userRole = dbUser[0].role;
+      req.userId = dbUser[0].id; // Set database user ID
 
       if (!userRole || !allowedRoles.includes(userRole)) {
         return res.status(403).json({ 
@@ -41,7 +53,6 @@ export function requireRole(...allowedRoles) {
       }
 
       req.userRole = userRole;
-      req.user = user;
       next();
     } catch (error) {
       console.error("Role verification error:", error);

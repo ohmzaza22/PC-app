@@ -11,6 +11,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
+import PageHeader from '../../components/PageHeader';
 import { approvalAPI, setAuthToken } from '../../lib/api';
 import { COLORS } from '../../constants/colors';
 
@@ -100,13 +101,7 @@ export default function MCDashboardScreen() {
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>MC Dashboard</Text>
-          <View style={{ width: 24 }} />
-        </View>
+        <PageHeader title="MC Dashboard" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Loading dashboard...</Text>
@@ -117,15 +112,14 @@ export default function MCDashboardScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>MC Dashboard</Text>
-        <TouchableOpacity onPress={handleRefresh}>
-          <Ionicons name="refresh" size={24} color={COLORS.primary} />
-        </TouchableOpacity>
-      </View>
+      <PageHeader 
+        title="MC Dashboard"
+        rightComponent={
+          <TouchableOpacity onPress={handleRefresh} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="refresh" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+        }
+      />
 
       <ScrollView
         style={styles.content}

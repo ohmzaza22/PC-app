@@ -103,8 +103,8 @@ export const promotionAPI = {
 
 // Store Visit API
 export const storeVisitAPI = {
-  checkIn: (data) => api.post('/store-visits/check-in', data),
-  checkOut: (data) => api.post('/store-visits/check-out', data),
+  checkIn: (storeId, location) => api.post('/store-visits/check-in', { store_id: storeId, location }),
+  checkOut: (visitId, location) => api.post('/store-visits/check-out', { visit_id: visitId, location }),
   getCurrent: () => api.get('/store-visits/current'),
   getHistory: (params) => api.get('/store-visits/history', { params }),
   validateAccess: (storeId) => api.get('/store-visits/validate-access', { params: { store_id: storeId } }),

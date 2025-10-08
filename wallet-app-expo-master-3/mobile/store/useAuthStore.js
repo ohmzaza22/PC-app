@@ -10,13 +10,21 @@ export const useAuthStore = create((set, get) => ({
   error: null,
 
   // Initialize user from Clerk
-  initUser: async (clerkUser) => {
+  initUser: async (clerkUser, clerkToken) => {
     set({ isLoading: true, error: null });
     try {
       console.log('🔐 Clerk User Data:', {
         id: clerkUser.id,
         email: clerkUser.emailAddresses[0]?.emailAddress,
       });
+
+      // Set auth token BEFORE making any API calls
+      if (clerkToken) {
+        console.log('🔑 Setting auth token');
+        setAuthToken(clerkToken);
+      } else {
+        console.warn('⚠️ No Clerk token provided to initUser');
+      }
 
       // Clear old cache first to ensure fresh data
       await AsyncStorage.removeItem('user_data');

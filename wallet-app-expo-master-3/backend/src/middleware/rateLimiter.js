@@ -1,13 +1,14 @@
-// Rate limiting disabled when Redis is not configured
+import ratelimit from "../config/upstash.js";
+
+// Rate limiting middleware
 const rateLimiter = async (req, res, next) => {
-  // Skip rate limiting if REDIS_URL is not set
-  if (!process.env.REDIS_URL) {
+  // Skip rate limiting if Redis is not configured
+  if (!ratelimit) {
     return next();
   }
 
   try {
-    const ratelimit = await import("../config/upstash.js");
-    const { success } = await ratelimit.default.limit("my-rate-limit");
+    const { success } = await ratelimit.limit(`api_${req.ip}`);
 
     if (!success) {
       return res.status(429).json({
@@ -17,7 +18,7 @@ const rateLimiter = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.log("Rate limit error (skipping):", error.message);
+    console.error("Rate limit error (skipping):", error.message);
     next(); // Continue without rate limiting if Redis fails
   }
 };

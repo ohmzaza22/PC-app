@@ -10,9 +10,22 @@ export async function createOSARecord(req, res) {
       return res.status(400).json({ message: "Store ID and availability data are required" });
     }
 
+    // Get current visit for this PC at this store
+    const visit = await sql`
+      SELECT id FROM store_visits
+      WHERE pc_id = ${pc_id}
+      AND store_id = ${store_id}
+      AND status = 'CHECKED_IN'
+      AND DATE(check_in_time) = CURRENT_DATE
+      ORDER BY check_in_time DESC
+      LIMIT 1
+    `;
+
+    const visit_id = visit.length > 0 ? visit[0].id : null;
+
     const record = await sql`
-      INSERT INTO osa_records(store_id, pc_id, photo_url, remarks, availability)
-      VALUES (${store_id}, ${pc_id}, ${photo_url}, ${remarks}, ${JSON.stringify(availability)})
+      INSERT INTO osa_records(store_id, pc_id, photo_url, remarks, availability, visit_id)
+      VALUES (${store_id}, ${pc_id}, ${photo_url}, ${remarks}, ${JSON.stringify(availability)}, ${visit_id})
       RETURNING *
     `;
 

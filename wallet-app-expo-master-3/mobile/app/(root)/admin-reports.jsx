@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { osaAPI, displayAPI, surveyAPI } from '../../lib/api';
 import { COLORS } from '../../constants/colors';
+import PageHeader from '../../components/PageHeader';
 
 export default function AdminReportsScreen() {
   const router = useRouter();
@@ -62,15 +63,14 @@ export default function AdminReportsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>View Reports</Text>
-        <TouchableOpacity onPress={fetchStats}>
-          <Ionicons name="refresh" size={24} color={COLORS.primary} />
-        </TouchableOpacity>
-      </View>
+      <PageHeader 
+        title="View Reports"
+        rightComponent={
+          <TouchableOpacity onPress={fetchStats} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="refresh" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+        }
+      />
 
       {isLoading ? (
         <View style={styles.loadingContainer}>

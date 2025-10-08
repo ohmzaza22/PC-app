@@ -5,6 +5,7 @@ import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import { userAPI, setAuthToken } from '../../lib/api';
 import { COLORS } from '../../constants/colors';
+import PageHeader from '../../components/PageHeader';
 
 export default function AdminUsersScreen() {
   const router = useRouter();
@@ -84,13 +85,7 @@ export default function AdminUsersScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Manage Users</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <PageHeader title="Manage Users" />
 
       <View style={styles.filterContainer}>
         {['ALL', 'PC', 'SUPERVISOR', 'ADMIN', 'SALES'].map((role) => (

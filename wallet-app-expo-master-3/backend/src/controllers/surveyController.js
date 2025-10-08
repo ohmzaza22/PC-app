@@ -10,9 +10,22 @@ export async function createSurvey(req, res) {
       return res.status(400).json({ message: "Template name, store ID, and data are required" });
     }
 
+    // Get current visit for this PC at this store
+    const visit = await sql`
+      SELECT id FROM store_visits
+      WHERE pc_id = ${pc_id}
+      AND store_id = ${store_id}
+      AND status = 'CHECKED_IN'
+      AND DATE(check_in_time) = CURRENT_DATE
+      ORDER BY check_in_time DESC
+      LIMIT 1
+    `;
+
+    const visit_id = visit.length > 0 ? visit[0].id : null;
+
     const survey = await sql`
-      INSERT INTO surveys(template_name, store_id, pc_id, data, photo_url)
-      VALUES (${template_name}, ${store_id}, ${pc_id}, ${JSON.stringify(data)}, ${photo_url})
+      INSERT INTO surveys(template_name, store_id, pc_id, data, photo_url, visit_id)
+      VALUES (${template_name}, ${store_id}, ${pc_id}, ${JSON.stringify(data)}, ${photo_url}, ${visit_id})
       RETURNING *
     `;
 

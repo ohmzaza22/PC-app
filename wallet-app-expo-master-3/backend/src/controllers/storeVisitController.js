@@ -20,7 +20,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 export async function checkIn(req, res) {
   try {
     const { store_id, location } = req.body;
-    const pc_id = req.user.id;
+    const pc_id = req.userId; // From clerkAuth middleware
 
     if (!store_id || !location || !location.latitude || !location.longitude) {
       return res.status(400).json({ message: "Store ID and GPS location are required" });
@@ -39,8 +39,8 @@ export async function checkIn(req, res) {
       ? JSON.parse(store[0].location) 
       : store[0].location;
 
-    // Validate GPS proximity (within 100 meters)
-    const maxDistance = parseInt(process.env.GPS_VALIDATION_RADIUS_METERS || "100");
+    // Validate GPS proximity (within 100 kilometers)
+    const maxDistance = parseInt(process.env.GPS_VALIDATION_RADIUS_METERS || "100000");
     
     if (storeLocation.latitude && storeLocation.longitude) {
       const distance = calculateDistance(
@@ -92,11 +92,11 @@ export async function checkIn(req, res) {
   }
 }
 
-// Check-out from a store
+// Check-out from a store (with task completion validation)
 export async function checkOut(req, res) {
   try {
     const { visit_id, location } = req.body;
-    const pc_id = req.user.id;
+    const pc_id = req.userId; // From clerkAuth middleware
 
     if (!visit_id || !location || !location.latitude || !location.longitude) {
       return res.status(400).json({ message: "Visit ID and GPS location are required" });
@@ -114,12 +114,32 @@ export async function checkOut(req, res) {
       return res.status(404).json({ message: "Active check-in not found" });
     }
 
+    // Check if all required tasks are completed
+    const incompleteTasks = await sql`
+      SELECT task_type, status 
+      FROM task_assignments 
+      WHERE visit_id = ${visit_id}
+      AND is_required = true
+      AND status != 'COMPLETED'
+    `;
+
+    if (incompleteTasks.length > 0) {
+      return res.status(400).json({ 
+        message: "You must complete all required tasks before checking out",
+        incompleteTasks: incompleteTasks.map(t => ({
+          taskType: t.task_type,
+          status: t.status
+        }))
+      });
+    }
+
     // Update check-out
     const updatedVisit = await sql`
       UPDATE store_visits
       SET check_out_time = NOW(),
           check_out_location = ${JSON.stringify(location)},
-          status = 'CHECKED_OUT'
+          status = 'CHECKED_OUT',
+          session_status = 'COMPLETED'
       WHERE id = ${visit_id}
       RETURNING *
     `;
@@ -134,18 +154,21 @@ export async function checkOut(req, res) {
   }
 }
 
-// Get current active visit for PC
+// Get current active visit for PC with task assignments
 export async function getCurrentVisit(req, res) {
   try {
-    const pc_id = req.user.id;
+    const pc_id = req.userId; // From clerkAuth middleware
 
     const visit = await sql`
       SELECT 
         sv.*,
         s.store_name,
-        s.location as store_location
+        s.location as store_location,
+        u.name as pc_name,
+        u.email as pc_email
       FROM store_visits sv
       JOIN stores s ON sv.store_id = s.id
+      JOIN users u ON sv.pc_id = u.id
       WHERE sv.pc_id = ${pc_id}
       AND sv.status = 'CHECKED_IN'
       AND DATE(sv.check_in_time) = CURRENT_DATE
@@ -154,10 +177,47 @@ export async function getCurrentVisit(req, res) {
     `;
 
     if (visit.length === 0) {
-      return res.status(200).json({ visit: null });
+      return res.status(200).json({ 
+        visit: null,
+        tasks: []
+      });
     }
 
-    res.status(200).json({ visit: visit[0] });
+    // Get task assignments for this visit
+    const tasks = await sql`
+      SELECT 
+        id,
+        task_type,
+        is_required,
+        status,
+        completed_at,
+        task_record_id
+      FROM task_assignments
+      WHERE visit_id = ${visit[0].id}
+      ORDER BY 
+        CASE task_type
+          WHEN 'OSA' THEN 1
+          WHEN 'DISPLAY' THEN 2
+          WHEN 'SURVEY' THEN 3
+          WHEN 'PROMOTION' THEN 4
+          ELSE 5
+        END
+    `;
+
+    // Calculate completion stats
+    const totalRequired = tasks.filter(t => t.is_required).length;
+    const completedRequired = tasks.filter(t => t.is_required && t.status === 'COMPLETED').length;
+    const canCheckOut = totalRequired === completedRequired;
+
+    res.status(200).json({ 
+      visit: visit[0],
+      tasks: tasks,
+      stats: {
+        totalRequired,
+        completedRequired,
+        canCheckOut
+      }
+    });
   } catch (error) {
     console.error("Error getting current visit:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -168,8 +228,8 @@ export async function getCurrentVisit(req, res) {
 export async function getVisitHistory(req, res) {
   try {
     const { pc_id, store_id, start_date, end_date } = req.query;
-    const userRole = req.user.role;
-    const userId = req.user.id;
+    const userRole = req.userRole; // From clerkAuth middleware
+    const userId = req.userId; // From clerkAuth middleware
 
     let query = sql`
       SELECT 
@@ -218,7 +278,7 @@ export async function getVisitHistory(req, res) {
 export async function validateTaskAccess(req, res) {
   try {
     const { store_id } = req.query;
-    const pc_id = req.user.id;
+    const pc_id = req.userId; // From clerkAuth middleware
 
     if (!store_id) {
       return res.status(400).json({ message: "Store ID is required" });

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import PageHeader from '../../components/PageHeader';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
@@ -17,13 +18,22 @@ export default function OSAScreen() {
   const [photo, setPhoto] = useState(null);
   const [location, setLocation] = useState(null);
   const [remarks, setRemarks] = useState('');
-  const [availability, setAvailability] = useState({
-    inStock: true,
-    stockLevel: 'full',
-    issues: '',
-  });
+  const [products, setProducts] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showStorePicker, setShowStorePicker] = useState(false);
+  const [showAddProduct, setShowAddProduct] = useState(false);
+
+  // Predefined product list
+  const availableProducts = [
+    'Coca-Cola 325ml',
+    'Pepsi 325ml',
+    'Sprite 325ml',
+    'Fanta 325ml',
+    'Water 600ml',
+    'Energy Drink',
+    'Juice Box',
+    'Iced Tea',
+  ];
 
   useEffect(() => {
     requestLocationPermission();
@@ -105,16 +115,10 @@ export default function OSAScreen() {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>On-Shelf Availability</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      <View style={styles.content}>
+    <View style={styles.wrapper}>
+      <PageHeader title="On-Shelf Availability" />
+      <ScrollView style={styles.container}>
+        <View style={styles.content}>
         {/* Store Selection */}
         <View style={styles.section}>
           <Text style={styles.label}>Store *</Text>
@@ -161,24 +165,67 @@ export default function OSAScreen() {
           
           {/* Map Display */}
           {location && (
-            <MapView
-              style={styles.map}
-              initialRegion={{
-                latitude: location.latitude,
-                longitude: location.longitude,
-                latitudeDelta: 0.005,
-                longitudeDelta: 0.005,
-              }}
-            >
-              <Marker
-                coordinate={{
-                  latitude: location.latitude,
-                  longitude: location.longitude,
+            <View style={styles.mapContainer}>
+              <Text style={styles.mapTitle}>
+                {selectedStore ? `Store: ${selectedStore.store_name}` : 'Your Location'}
+              </Text>
+              <MapView
+                style={styles.map}
+                initialRegion={{
+                  latitude: selectedStore && selectedStore.location 
+                    ? (typeof selectedStore.location === 'string' 
+                      ? JSON.parse(selectedStore.location).latitude 
+                      : selectedStore.location.latitude)
+                    : location.latitude,
+                  longitude: selectedStore && selectedStore.location
+                    ? (typeof selectedStore.location === 'string'
+                      ? JSON.parse(selectedStore.location).longitude
+                      : selectedStore.location.longitude)
+                    : location.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
                 }}
-                title="Your Location"
-                pinColor="#10B981"
-              />
-            </MapView>
+              >
+                {/* PC's Current Location */}
+                <Marker
+                  coordinate={{
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                  }}
+                  title="Your Location"
+                  description="You are here"
+                >
+                  <View style={styles.currentLocationMarker}>
+                    <Ionicons name="person" size={20} color="#FFF" />
+                  </View>
+                </Marker>
+
+                {/* Selected Store Location */}
+                {selectedStore && selectedStore.location && (() => {
+                  const storeLocation = typeof selectedStore.location === 'string'
+                    ? JSON.parse(selectedStore.location)
+                    : selectedStore.location;
+                  
+                  if (storeLocation.latitude && storeLocation.longitude) {
+                    return (
+                      <Marker
+                        coordinate={{
+                          latitude: parseFloat(storeLocation.latitude),
+                          longitude: parseFloat(storeLocation.longitude),
+                        }}
+                        title={selectedStore.store_name}
+                        description="Store Location"
+                      >
+                        <View style={styles.storeMarker}>
+                          <Ionicons name="storefront" size={20} color="#FFF" />
+                        </View>
+                      </Marker>
+                    );
+                  }
+                  return null;
+                })()}
+              </MapView>
+            </View>
           )}
         </View>
 
@@ -264,14 +311,18 @@ export default function OSAScreen() {
           )}
         </TouchableOpacity>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  wrapper: {
     flex: 1,
     backgroundColor: '#F9FAFB',
+  },
+  container: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -351,12 +402,52 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     flex: 1,
   },
+  mapContainer: {
+    marginTop: 12,
+  },
+  mapTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
   map: {
     width: '100%',
-    height: 200,
+    height: 250,
     borderRadius: 12,
-    marginTop: 12,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  currentLocationMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  storeMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
   },
   photoButton: {
     borderRadius: 12,

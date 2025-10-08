@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import PageHeader from '../../components/PageHeader';
 import { displayAPI } from '../../lib/api';
 import { COLORS } from '../../constants/colors';
 
@@ -39,13 +40,7 @@ export default function SupervisorVerifyScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Verify Submissions</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <PageHeader title="Verify Submissions" />
 
       <View style={styles.filterContainer}>
         <TouchableOpacity
