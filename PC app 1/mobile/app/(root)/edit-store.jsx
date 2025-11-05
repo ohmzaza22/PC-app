@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import PageHeader from '../../components/PageHeader';
 import MapView, { Marker } from '../../components/MapView';
 import * as Location from 'expo-location';
-import { storeAPI, setAuthToken } from '../../lib/api';
+import { storeAPI, userAPI, setAuthToken } from '../../lib/api';
 import { COLORS } from '../../constants/colors';
 
 const STORE_TYPES = [
@@ -46,6 +46,9 @@ export default function EditStoreScreen() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [storeType, setStoreType] = useState('RETAIL');
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
+  const [assignedPcId, setAssignedPcId] = useState(null);
+  const [showPcDropdown, setShowPcDropdown] = useState(false);
+  const [pcUsers, setPcUsers] = useState([]);
 
   // Map state
   const [markerCoordinate, setMarkerCoordinate] = useState(null);
@@ -65,6 +68,7 @@ export default function EditStoreScreen() {
   useEffect(() => {
     initializeAuth();
     requestLocationPermission();
+    fetchPcUsers();
     if (isEditMode) {
       loadStoreData();
     }
@@ -87,6 +91,15 @@ export default function EditStoreScreen() {
     }
   };
 
+  const fetchPcUsers = async () => {
+    try {
+      const response = await userAPI.getAll('PC');
+      setPcUsers(response.data || []);
+    } catch (error) {
+      console.error('Error fetching PC users:', error);
+    }
+  };
+
   const loadStoreData = async () => {
     setIsLoadingStore(true);
     try {
@@ -98,6 +111,7 @@ export default function EditStoreScreen() {
       setStoreType(store.store_type || 'RETAIL');
       setContactPerson(store.contact_person || '');
       setPhoneNumber(store.phone_number || '');
+      setAssignedPcId(store.assigned_pc_id || null);
       
       if (store.location) {
         const loc = typeof store.location === 'string' ? JSON.parse(store.location) : store.location;
@@ -264,6 +278,7 @@ export default function EditStoreScreen() {
         store_type: storeType,
         contact_person: contactPerson || null,
         phone_number: phoneNumber || null,
+        assigned_pc_id: assignedPcId,
       };
 
       if (isEditMode) {
@@ -276,7 +291,6 @@ export default function EditStoreScreen() {
           },
         ]);
       } else {
-        storeData.assigned_pc_id = null;
         const response = await storeAPI.create(storeData);
         console.log('Store created:', response.data);
         Alert.alert('Success', 'Store added successfully!', [
@@ -458,6 +472,78 @@ export default function EditStoreScreen() {
               onChangeText={setPhoneNumber}
               keyboardType="phone-pad"
             />
+          </View>
+
+          {/* Assign to PC */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Assign to PC</Text>
+            <TouchableOpacity
+              style={styles.dropdown}
+              onPress={() => setShowPcDropdown(!showPcDropdown)}
+            >
+              <Text style={styles.dropdownText}>
+                {assignedPcId
+                  ? pcUsers.find((u) => u.id === assignedPcId)?.name || 'Select PC'
+                  : 'Unassigned'}
+              </Text>
+              <Ionicons
+                name={showPcDropdown ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={COLORS.textLight}
+              />
+            </TouchableOpacity>
+            {showPcDropdown && (
+              <View style={styles.dropdownMenu}>
+                <TouchableOpacity
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setAssignedPcId(null);
+                    setShowPcDropdown(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.dropdownItemText,
+                      !assignedPcId && styles.dropdownItemTextActive,
+                    ]}
+                  >
+                    Unassigned
+                  </Text>
+                  {!assignedPcId && (
+                    <Ionicons name="checkmark" size={20} color={COLORS.primary} />
+                  )}
+                </TouchableOpacity>
+                {pcUsers.map((user) => (
+                  <TouchableOpacity
+                    key={user.id}
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      setAssignedPcId(user.id);
+                      setShowPcDropdown(false);
+                    }}
+                  >
+                    <View>
+                      <Text
+                        style={[
+                          styles.dropdownItemText,
+                          assignedPcId === user.id && styles.dropdownItemTextActive,
+                        ]}
+                      >
+                        {user.name || user.email}
+                      </Text>
+                      {user.assigned_stores && user.assigned_stores.length > 0 && (
+                        <Text style={styles.pcStoreCount}>
+                          {user.assigned_stores.length} store(s) assigned
+                        </Text>
+                      )}
+                    </View>
+                    {assignedPcId === user.id && (
+                      <Ionicons name="checkmark" size={20} color={COLORS.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         </View>
 
@@ -671,6 +757,11 @@ const styles = StyleSheet.create({
   dropdownItemTextActive: {
     fontWeight: '600',
     color: COLORS.primary,
+  },
+  pcStoreCount: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginTop: 2,
   },
   mapHeader: {
     flexDirection: 'row',

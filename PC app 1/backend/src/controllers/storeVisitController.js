@@ -1,29 +1,27 @@
-import { sql } from "../config/db.js";
+/**
+ * Store Visit Controller
+ * Handles check-in, check-out, and visit history operations
+ */
 
-// Calculate distance between two GPS coordinates (Haversine formula)
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3; // Earth's radius in meters
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+import { sql } from '../config/db.js';
+import { calculateDistance, parseLocation, getUserIdFromClerkId } from '../utils/helpers.js';
+import { sendSuccess, sendCreated, sendError, sendValidationError, sendNotFound } from '../utils/response.js';
+import { ValidationError, NotFoundError } from '../utils/errors.js';
+import { GPS_CONFIG, VISIT_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants/index.js';
 
-  const a =
-    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c; // Distance in meters
-}
-
-// Check-in to a store
+/**
+ * Check in to a store
+ * @route POST /api/store-visits/check-in
+ * @access Private (PC only)
+ */
 export async function checkIn(req, res) {
   try {
     const { store_id, location } = req.body;
-    const pc_id = req.userId; // From clerkAuth middleware
+    const pc_id = await getUserIdFromClerkId(sql, req.userId);
 
-    if (!store_id || !location || !location.latitude || !location.longitude) {
-      return res.status(400).json({ message: "Store ID and GPS location are required" });
+    // Validate required fields
+    if (!store_id || !location?.latitude || !location?.longitude) {
+      return sendValidationError(res, 'Store ID and GPS location are required');
     }
 
     // Get store location
@@ -32,17 +30,13 @@ export async function checkIn(req, res) {
     `;
 
     if (store.length === 0) {
-      return res.status(404).json({ message: "Store not found" });
+      return sendNotFound(res, 'Store');
     }
 
-    const storeLocation = typeof store[0].location === 'string' 
-      ? JSON.parse(store[0].location) 
-      : store[0].location;
-
-    // Validate GPS proximity (within 100 kilometers)
-    const maxDistance = parseInt(process.env.GPS_VALIDATION_RADIUS_METERS || "100000");
+    // Validate GPS proximity
+    const storeLocation = parseLocation(store[0].location);
     
-    if (storeLocation.latitude && storeLocation.longitude) {
+    if (storeLocation?.latitude && storeLocation?.longitude) {
       const distance = calculateDistance(
         location.latitude,
         location.longitude,
@@ -50,11 +44,10 @@ export async function checkIn(req, res) {
         parseFloat(storeLocation.longitude)
       );
 
-      if (distance > maxDistance) {
-        return res.status(400).json({ 
-          message: `You must be within ${maxDistance}m of the store to check in`,
+      if (distance > GPS_CONFIG.MAX_DISTANCE_METERS) {
+        return sendValidationError(res, ERROR_MESSAGES.GPS_TOO_FAR, {
           distance: Math.round(distance),
-          maxDistance
+          maxDistance: GPS_CONFIG.MAX_DISTANCE_METERS,
         });
       }
     }
@@ -64,31 +57,27 @@ export async function checkIn(req, res) {
       SELECT id FROM store_visits 
       WHERE pc_id = ${pc_id} 
       AND store_id = ${store_id} 
-      AND status = 'CHECKED_IN'
+      AND status = ${VISIT_STATUS.CHECKED_IN}
       AND DATE(check_in_time) = CURRENT_DATE
     `;
 
     if (existingVisit.length > 0) {
-      return res.status(400).json({ 
-        message: "You are already checked in to this store",
-        visit_id: existingVisit[0].id
+      return sendValidationError(res, ERROR_MESSAGES.ALREADY_CHECKED_IN, {
+        visit_id: existingVisit[0].id,
       });
     }
 
     // Create check-in record
     const visit = await sql`
       INSERT INTO store_visits(store_id, pc_id, check_in_time, check_in_location, status)
-      VALUES (${store_id}, ${pc_id}, NOW(), ${JSON.stringify(location)}, 'CHECKED_IN')
+      VALUES (${store_id}, ${pc_id}, NOW(), ${JSON.stringify(location)}, ${VISIT_STATUS.CHECKED_IN})
       RETURNING *
     `;
 
-    res.status(201).json({
-      message: "Checked in successfully",
-      visit: visit[0]
-    });
+    sendCreated(res, { visit: visit[0] }, SUCCESS_MESSAGES.CHECKED_IN);
   } catch (error) {
-    console.error("Error checking in:", error);
-    res.status(500).json({ message: "Internal server error" });
+    console.error('❌ Check-in error:', error);
+    sendError(res, error.message);
   }
 }
 

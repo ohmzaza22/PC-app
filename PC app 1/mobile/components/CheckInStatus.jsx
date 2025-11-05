@@ -3,21 +3,33 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import MapView, { Marker, Circle } from './MapView';
 import { COLORS } from '../constants/colors';
+import { THAI } from '../constants/thai';
 import { useState, useEffect, useRef } from 'react';
 import * as Location from 'expo-location';
-import { storeVisitAPI, storeAPI } from '../lib/api';
+import { storeVisitAPI, storeAPI, taskAPI } from '../lib/api';
+import { useMapStore } from '../store/useMapStore';
 
 const { width, height } = Dimensions.get('window');
 
 export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh }) {
   const router = useRouter();
-  const mapRef = useRef(null);
+  const localMapRef = useRef(null);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [stores, setStores] = useState([]);
-  const [currentLocation, setCurrentLocation] = useState(null);
   const [showMap, setShowMap] = useState(true);
+  
+  const { 
+    region, 
+    currentLocation, 
+    setCurrentLocation, 
+    setMapRef, 
+    zoomIn,
+    zoomOut,
+    fitToMarkers,
+    onRegionChangeComplete 
+  } = useMapStore();
 
   useEffect(() => {
     if (showStoreModal) {
@@ -26,22 +38,52 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
     }
   }, [showStoreModal]);
 
-  const fetchStores = async () => {
-    try {
-      const response = await storeAPI.getAll();
-      setStores(response.data);
-      
-      // Fit map to show all stores after they're loaded
-      setTimeout(() => {
-        fitMapToMarkers(response.data);
-      }, 500);
-    } catch (error) {
-      console.error('Error fetching stores:', error);
+  // Sync local map ref with global store when modal opens
+  const handleMapReady = () => {
+    if (localMapRef.current) {
+      setMapRef(localMapRef.current);
     }
   };
 
-  const fitMapToMarkers = (storeList) => {
-    if (!mapRef.current || !currentLocation || !storeList.length) return;
+  const fetchStores = async () => {
+    try {
+      // Try to fetch eligible stores (stores with tasks for today) for PC users
+      try {
+        const response = await taskAPI.getCheckinEligibility();
+        const eligibleStores = response.data.eligibleStores || [];
+        
+        // Transform to match existing store structure
+        const transformedStores = eligibleStores.map(es => ({
+          id: es.storeId,
+          store_name: es.storeName,
+          location: es.location,
+          tasks: es.tasks, // Include task information
+        }));
+        
+        setStores(transformedStores);
+        
+        // Fit map to show all eligible stores after they're loaded
+        setTimeout(() => {
+          fitMapToMarkersWithStores(transformedStores);
+        }, 500);
+      } catch (eligibilityError) {
+        // If eligibility endpoint is not available or fails, fallback to all stores
+        console.log('Eligibility check not available, loading all stores');
+        const fallbackResponse = await storeAPI.getAll();
+        setStores(fallbackResponse.data || []);
+        
+        setTimeout(() => {
+          fitMapToMarkersWithStores(fallbackResponse.data || []);
+        }, 500);
+      }
+    } catch (error) {
+      console.error('Error fetching stores:', error);
+      setStores([]);
+    }
+  };
+
+  const fitMapToMarkersWithStores = (storeList) => {
+    if (!currentLocation || !storeList.length) return;
 
     const markers = storeList
       .map(store => {
@@ -63,10 +105,7 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
     });
 
     if (markers.length > 0) {
-      mapRef.current.fitToCoordinates(markers, {
-        edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-        animated: true,
-      });
+      fitToMarkers(markers);
     }
   };
 
@@ -82,6 +121,7 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
         accuracy: Location.Accuracy.High,
       });
 
+      // Update shared map store
       setCurrentLocation({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -151,23 +191,23 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
       console.error('Error checking in:', error);
       Alert.alert('Error', error.response?.data?.message || 'Failed to check in');
     } finally {
-      setIsCheckingIn(false);
     }
   };
 
   const handleCancelCheckIn = async () => {
     Alert.alert(
-      'Cancel Check-In',
-      'Are you sure you want to cancel this check-in? This will delete the check-in and all related task progress.',
+      THAI.cancelCheckIn,
+      THAI.confirmCancelCheckIn,
       [
-        { text: 'No', style: 'cancel' },
+        { text: THAI.cancel, style: 'cancel' },
         {
-          text: 'Yes, Cancel',
+          text: THAI.yesCancelCheckIn,
           style: 'destructive',
           onPress: async () => {
             setIsCheckingOut(true);
             try {
               await storeVisitAPI.cancelCheckIn(currentVisit.id);
+              Alert.alert(THAI.checkInCancelled, THAI.checkInCancelledDescription);
               Alert.alert('Check-In Cancelled', 'You have been checked out. You can check in to the correct store now.');
               onRefresh?.();
             } catch (error) {
@@ -186,9 +226,9 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
     if (!stats?.canCheckOut) {
       const incompleteTasks = tasks?.filter(t => t.is_required && t.status !== 'COMPLETED') || [];
       Alert.alert(
-        'Cannot Check Out',
-        `You must complete all required tasks before checking out:\n\n${incompleteTasks.map(t => `• ${t.task_type}`).join('\n')}`,
-        [{ text: 'OK' }]
+        THAI.checkOutFromStore,
+        `${THAI.completeRequiredTasks}:\n\n${incompleteTasks.map(t => `• ${t.task_type}`).join('\n')}`,
+        [{ text: THAI.confirm }]
       );
       return;
     }
@@ -197,9 +237,9 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
       'Confirm Check-Out',
       'Are you sure you want to check out?',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: THAI.cancel, style: 'cancel' },
         {
-          text: 'Check Out',
+          text: THAI.checkOutFromStore,
           style: 'destructive',
           onPress: async () => {
             setIsCheckingOut(true);
@@ -240,15 +280,15 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
       <>
         <View style={styles.notCheckedInCard}>
           <Ionicons name="location-outline" size={48} color={COLORS.primary} />
-          <Text style={styles.notCheckedInText}>Not Checked In</Text>
-          <Text style={styles.notCheckedInSubtext}>Check in to a store to start your shift</Text>
+          <Text style={styles.notCheckedInText}>{THAI.notCheckedIn}</Text>
+          <Text style={styles.notCheckedInSubtext}>{THAI.checkInDescription}</Text>
           
           <TouchableOpacity
             style={styles.checkInButton}
             onPress={() => setShowStoreModal(true)}
           >
             <Ionicons name="location" size={20} color={COLORS.white} />
-            <Text style={styles.checkInButtonText}>Check In to Store</Text>
+            <Text style={styles.checkInButtonText}>{THAI.checkInToStore}</Text>
           </TouchableOpacity>
         </View>
 
@@ -295,18 +335,15 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
                 </View>
               )}
 
-              {/* Map View (Native platforms only) */}
-              {Platform.OS !== 'web' && showMap && currentLocation && (
+              {/* Map View with Google Maps - Shared state */}
+              {showMap && currentLocation && (
                 <View style={styles.mapContainer}>
                   <MapView
-                    ref={mapRef}
+                    ref={localMapRef}
                     style={styles.map}
-                    initialRegion={{
-                      latitude: currentLocation.latitude,
-                      longitude: currentLocation.longitude,
-                      latitudeDelta: 0.05,
-                      longitudeDelta: 0.05,
-                    }}
+                    region={region}
+                    onRegionChangeComplete={onRegionChangeComplete}
+                    onMapReady={handleMapReady}
                   >
                     {/* Current Location Marker */}
                     <Marker
@@ -376,9 +413,26 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
                     })}
                   </MapView>
 
+                  {/* Zoom Controls */}
+                  <View style={styles.zoomControls}>
+                    <TouchableOpacity
+                      style={styles.zoomButton}
+                      onPress={zoomIn}
+                    >
+                      <Ionicons name="add" size={24} color={COLORS.primary} />
+                    </TouchableOpacity>
+                    <View style={styles.zoomDivider} />
+                    <TouchableOpacity
+                      style={styles.zoomButton}
+                      onPress={zoomOut}
+                    >
+                      <Ionicons name="remove" size={24} color={COLORS.primary} />
+                    </TouchableOpacity>
+                  </View>
+
                   <TouchableOpacity
                     style={styles.centerButton}
-                    onPress={() => fitMapToMarkers(stores)}
+                    onPress={() => fitMapToMarkersWithStores(stores)}
                   >
                     <Ionicons name="locate" size={24} color={COLORS.primary} />
                   </TouchableOpacity>
@@ -405,6 +459,13 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
                     );
                   }
 
+                  // Get task type icons and colors
+                  const taskTypeConfig = {
+                    'OSA': { icon: 'checkmark-circle', color: COLORS.module1, label: 'OSA' },
+                    'SPECIAL_DISPLAY': { icon: 'images', color: COLORS.module2, label: 'Display' },
+                    'SURVEY': { icon: 'document-text', color: COLORS.module3, label: 'Survey' },
+                  };
+
                   return (
                     <TouchableOpacity
                       style={styles.storeItem}
@@ -413,6 +474,25 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
                     >
                       <View style={styles.storeInfo}>
                         <Text style={styles.storeName}>{item.store_name}</Text>
+                        
+                        {/* Task Type Badges */}
+                        {item.tasks && item.tasks.length > 0 && (
+                          <View style={styles.taskBadgesContainer}>
+                            {item.tasks.map((task, index) => {
+                              const config = taskTypeConfig[task.type];
+                              if (!config) return null;
+                              return (
+                                <View key={index} style={[styles.taskBadge, { backgroundColor: config.color + '20' }]}>
+                                  <Ionicons name={config.icon} size={12} color={config.color} />
+                                  <Text style={[styles.taskBadgeText, { color: config.color }]}>
+                                    {config.label}
+                                  </Text>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        )}
+                        
                         {distance !== null && (
                           <View style={styles.distanceContainer}>
                             <Ionicons 
@@ -435,7 +515,9 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
                 }}
                 ListEmptyComponent={
                   <View style={styles.emptyState}>
-                    <Text style={styles.emptyText}>No stores available</Text>
+                    <Ionicons name="calendar-outline" size={48} color={COLORS.textMuted} />
+                    <Text style={styles.emptyText}>{THAI.noTasksToday}</Text>
+                    <Text style={styles.emptySubtext}>{THAI.waitingForAssignment}</Text>
                   </View>
                 }
                 />
@@ -505,7 +587,7 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
         {/* Task Progress */}
         {stats && (
           <View style={styles.progressSection}>
-            <Text style={styles.progressTitle}>Task Progress</Text>
+            <Text style={styles.progressTitle}>{THAI.taskProgress}</Text>
             <View style={styles.progressBar}>
               <View 
                 style={[
@@ -538,7 +620,7 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
             <>
               <Ionicons name="log-out-outline" size={20} color={COLORS.white} />
               <Text style={styles.checkOutButtonText}>
-                {stats?.canCheckOut ? 'Check Out' : 'Complete Tasks to Check Out'}
+                {stats?.canCheckOut ? THAI.checkOutFromStore : THAI.checkOutDescription}
               </Text>
             </>
           )}
@@ -551,7 +633,7 @@ export default function CheckInStatus({ currentVisit, tasks, stats, onRefresh })
           disabled={isCheckingOut}
         >
           <Ionicons name="close-circle-outline" size={20} color={COLORS.error} />
-          <Text style={styles.cancelButtonText}>Wrong Store? Cancel Check-In</Text>
+          <Text style={styles.cancelButtonText}>{THAI.wrongStoreQuestion}</Text>
         </TouchableOpacity>
       </View>
 
@@ -738,13 +820,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
+  taskBadgesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginVertical: 6,
+  },
+  taskBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  taskBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
   emptyState: {
     padding: 40,
     alignItems: 'center',
   },
   emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginTop: 16,
+  },
+  emptySubtext: {
     fontSize: 14,
     color: COLORS.textMuted,
+    marginTop: 8,
+    textAlign: 'center',
   },
   loadingOverlay: {
     position: 'absolute',
@@ -806,6 +914,30 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
     elevation: 5,
+  },
+  zoomControls: {
+    position: 'absolute',
+    right: 16,
+    bottom: 80,
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    overflow: 'hidden',
+  },
+  zoomButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+  },
+  zoomDivider: {
+    height: 1,
+    backgroundColor: COLORS.borderLight,
   },
   centerButton: {
     position: 'absolute',

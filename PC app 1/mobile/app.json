@@ -14,7 +14,8 @@
         "NSCameraUsageDescription": "This app needs access to the camera to take photos for OSA records, special displays, and surveys.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images.",
         "NSLocationWhenInUseUsageDescription": "This app needs your location to verify store check-ins and record field visit locations."
-      }
+      },
+      "bundleIdentifier": "com.pcapp.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,11 +24,12 @@
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.RECORD_AUDIO"
       ],
       "package": "com.pcapp.mobile"
     },

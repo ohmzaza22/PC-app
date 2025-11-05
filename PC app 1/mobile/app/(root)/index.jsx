@@ -1,6 +1,6 @@
 import { useUser, useAuth } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
-import { RefreshControl, ScrollView, Text, TouchableOpacity, View, StyleSheet, Dimensions, Platform } from "react-native";
+import { RefreshControl, ScrollView, Text, TouchableOpacity, View, StyleSheet, Dimensions, Platform, ActivityIndicator } from "react-native";
 import Animated from "react-native-reanimated";
 import { SignOutButton } from "@/components/SignOutButton";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
@@ -11,8 +11,10 @@ import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useStoreStore } from "../../store/useStoreStore";
-import { setAuthToken, storeVisitAPI } from "../../lib/api";
+import { useMapStore } from "../../store/useMapStore";
+import { setAuthToken, storeVisitAPI, taskAPI } from "../../lib/api";
 import { COLORS } from "../../constants/colors";
+import { THAI } from "../../constants/thai";
 import { useStaggeredFade, usePressAnimation, useFadeIn } from "../../hooks/useAnimations";
 
 const { width } = Dimensions.get('window');
@@ -21,15 +23,27 @@ export default function Page() {
   const { user } = useUser();
   const { getToken } = useAuth();
   const router = useRouter();
-  const mapRef = useRef(null);
+  const localMapRef = useRef(null);
   const [refreshing, setRefreshing] = useState(false);
   const [currentVisit, setCurrentVisit] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [taskStats, setTaskStats] = useState(null);
-  const [currentLocation, setCurrentLocation] = useState(null);
   
   const { user: dbUser, userRole, initUser, refreshUser, isLoading } = useAuthStore();
-  const { fetchStores, stores } = useStoreStore();
+  const { fetchStores, stores: allStores } = useStoreStore();
+  const [displayStores, setDisplayStores] = useState([]);
+  const { 
+    region, 
+    currentLocation, 
+    setCurrentLocation, 
+    setMapRef, 
+    setMapReady,
+    centerOnCurrentLocation,
+    zoomIn,
+    zoomOut,
+    fitToMarkers,
+    onRegionChangeComplete 
+  } = useMapStore();
 
   // Initialize user once on mount
   useEffect(() => {
@@ -47,19 +61,77 @@ export default function Page() {
     initializeUser();
   }, [user]);
 
+  // Load stores based on user role
+  const loadStores = async () => {
+    try {
+      if (userRole === 'PC') {
+        // PC users: only show stores with assigned tasks
+        try {
+          const response = await taskAPI.getCheckinEligibility();
+          const eligibleStores = response.data.eligibleStores || [];
+          
+          // Transform to match store structure
+          const transformedStores = eligibleStores.map(es => ({
+            id: es.storeId,
+            store_name: es.storeName,
+            location: es.location,
+            tasks: es.tasks,
+          }));
+          
+          setDisplayStores(transformedStores);
+        } catch (error) {
+          console.log('Task eligibility not available, loading all stores');
+          await fetchStores(dbUser.id);
+          setDisplayStores(allStores);
+        }
+      } else {
+        // MC/Admin/Other: show all stores
+        await fetchStores(null);
+        setDisplayStores(allStores);
+      }
+    } catch (error) {
+      console.error('Error loading stores:', error);
+    }
+  };
+
   // Load stores and current visit after user is initialized
   useEffect(() => {
     if (dbUser && userRole) {
-      const storeId = userRole === 'PC' ? dbUser.id : null;
-      fetchStores(storeId).catch(err => console.error('Error loading stores:', err));
+      loadStores();
       
-      // Fetch current visit for PC users
+      // Get location for map display (all users)
+      getCurrentLocation();
+      
+      // Fetch current visit for PC users only
       if (userRole === 'PC') {
         fetchCurrentVisit();
-        getCurrentLocation();
       }
     }
   }, [dbUser, userRole]);
+
+  // Update displayStores when allStores changes (for non-PC users)
+  useEffect(() => {
+    if (userRole !== 'PC' && allStores.length > 0) {
+      setDisplayStores(allStores);
+    }
+  }, [allStores, userRole]);
+
+  // Fit map when displayStores changes
+  useEffect(() => {
+    if (displayStores.length > 0 && currentLocation) {
+      setTimeout(() => {
+        fitMapToMarkersWithStores();
+      }, 500);
+    }
+  }, [displayStores, currentLocation]);
+
+  // Sync local map ref with global store when map is mounted
+  const handleMapReady = useCallback(() => {
+    if (localMapRef.current) {
+      setMapRef(localMapRef.current);
+      setMapReady(true);
+    }
+  }, [setMapRef, setMapReady]);
 
   const getCurrentLocation = async () => {
     try {
@@ -73,6 +145,7 @@ export default function Page() {
         accuracy: Location.Accuracy.Balanced,
       });
 
+      // Update shared map store
       setCurrentLocation({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -80,7 +153,7 @@ export default function Page() {
 
       // Fit map to show all markers after getting location
       setTimeout(() => {
-        fitMapToMarkers();
+        fitMapToMarkersWithStores();
       }, 500);
     } catch (error) {
       console.error('Error getting location:', error);
@@ -102,10 +175,10 @@ export default function Page() {
     return R * c;
   };
 
-  const fitMapToMarkers = () => {
-    if (!mapRef.current || !currentLocation || !stores || stores.length === 0) return;
+  const fitMapToMarkersWithStores = () => {
+    if (!currentLocation || !displayStores || displayStores.length === 0) return;
 
-    const markers = stores
+    const markers = displayStores
       .map(store => {
         const loc = typeof store.location === 'string' ? JSON.parse(store.location) : store.location;
         if (loc.latitude && loc.longitude) {
@@ -125,10 +198,7 @@ export default function Page() {
     });
 
     if (markers.length > 0) {
-      mapRef.current.fitToCoordinates(markers, {
-        edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-        animated: true,
-      });
+      fitToMarkers(markers);
     }
   };
 
@@ -168,7 +238,7 @@ export default function Page() {
           setAuthToken(token);
         }
         await refreshUser();
-        await fetchStores(userRole === 'PC' ? dbUser.id : null);
+        await loadStores();
         
         // Refresh current visit for PC users
         if (userRole === 'PC') {
@@ -180,37 +250,36 @@ export default function Page() {
     }
     setRefreshing(false);
   }, [dbUser, userRole, getToken, refreshUser, fetchStores]);
-
   // Memoize module arrays to prevent recreation on every render
   const pcModules = useMemo(() => [
     {
       id: 'osa',
-      title: 'On-Shelf Availability',
-      subtitle: 'Check stock & availability',
+      title: THAI.osaFull,
+      subtitle: THAI.osaDescription,
       icon: 'checkmark-circle',
       color: COLORS.module1,
       route: '/osa',
     },
     {
       id: 'display',
-      title: 'Special Display',
-      subtitle: 'Record display setups',
+      title: THAI.displayFull,
+      subtitle: THAI.displayDescription,
       icon: 'images',
       color: COLORS.module2,
       route: '/display',
     },
     {
       id: 'survey',
-      title: 'Market Information',
-      subtitle: 'Submit field surveys',
+      title: THAI.surveyFull,
+      subtitle: THAI.surveyDescription,
       icon: 'document-text',
       color: COLORS.module3,
       route: '/survey',
     },
     {
       id: 'promotion',
-      title: 'Promotions',
-      subtitle: 'View active promotions',
+      title: THAI.promotionFull,
+      subtitle: THAI.promotionDescription,
       icon: 'megaphone',
       color: COLORS.module4,
       route: '/promotions',
@@ -219,61 +288,53 @@ export default function Page() {
 
   const supervisorModules = useMemo(() => [
     {
-      id: 'mc-dashboard',
-      title: 'MC Dashboard',
-      subtitle: 'Review pending tasks',
-      icon: 'stats-chart',
+      id: 'assign-task',
+      title: 'มอบหมายงาน',
+      subtitle: 'มอบหมายงาน OSA, Special Display และ Market Information ให้ PC',
+      icon: 'clipboard',
       color: COLORS.primary,
-      route: '/mc-dashboard',
+      route: '/assign-task',
       featured: true,
     },
     {
-      id: 'review-tasks',
-      title: 'Review Tasks',
-      subtitle: 'Approve or reject submissions',
-      icon: 'checkmark-done',
-      color: COLORS.warning,
-      route: '/review-tasks',
-    },
-    {
-      id: 'visit-history',
-      title: 'Visit History',
-      subtitle: 'View PC check-ins',
-      icon: 'time',
-      color: COLORS.info,
-      route: '/visit-history',
+      id: 'task-assignments',
+      title: 'รายการที่มอบหมายงาน',
+      subtitle: 'ดูประวัติและรายละเอียดงานที่มอบหมายไปแล้ว',
+      icon: 'briefcase',
+      color: COLORS.module2,
+      route: '/task-assignments',
     },
   ], []);
 
   const adminModules = useMemo(() => [
     {
       id: 'stores',
-      title: 'Manage Stores',
-      subtitle: 'Add and assign stores',
+      title: THAI.manageStores,
+      subtitle: THAI.addAssignStores,
       icon: 'storefront',
       color: COLORS.primary,
       route: '/admin-stores',
     },
     {
       id: 'users',
-      title: 'Manage Users',
-      subtitle: 'View and manage PCs',
+      title: THAI.manageUsers,
+      subtitle: THAI.viewManagePCs,
       icon: 'people',
       color: COLORS.module2,
       route: '/admin-users',
     },
     {
       id: 'reports',
-      title: 'View Reports',
-      subtitle: 'OSA, Display, Survey data',
+      title: THAI.viewReports,
+      subtitle: THAI.osaDisplaySurveyData,
       icon: 'bar-chart',
       color: COLORS.module3,
       route: '/admin-reports',
     },
     {
       id: 'promotion',
-      title: 'Upload Promotions',
-      subtitle: 'Manage promotion PDFs',
+      title: THAI.uploadPromotions,
+      subtitle: THAI.managePromotionPDFs,
       icon: 'cloud-upload',
       color: COLORS.module4,
       route: '/promotions',
@@ -284,8 +345,8 @@ export default function Page() {
     ...pcModules,
     {
       id: 'rejected',
-      title: 'Rejected Tasks',
-      subtitle: 'Tasks needing correction',
+      title: THAI.rejectedTasks,
+      subtitle: THAI.tasksNeedingCorrection,
       icon: 'alert-circle',
       color: COLORS.error,
       route: '/rejected-tasks',
@@ -321,7 +382,7 @@ export default function Page() {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={styles.welcomeContainer}>
-              <Text style={styles.welcomeText}>Welcome,</Text>
+              <Text style={styles.welcomeText}>{THAI.welcome},</Text>
               <Text style={styles.usernameText}>
                 {user?.firstName || user?.emailAddresses[0]?.emailAddress.split("@")[0]}
               </Text>
@@ -349,30 +410,38 @@ export default function Page() {
           />
         )}
 
-        {/* MAP VIEW (PC Only - Native platforms only) */}
-        {Platform.OS !== 'web' && userRole === 'PC' && currentLocation && stores && stores.length > 0 && (
-          <View style={styles.mapSection}>
-            <View style={styles.mapHeader}>
-              <Text style={styles.mapTitle}>Store Locations</Text>
+        {/* TASK INFO BANNER (PC Only) */}
+        {userRole === 'PC' && (
+          <View style={styles.taskInfoBanner}>
+            <Ionicons name="information-circle" size={18} color={COLORS.info} />
+            <Text style={styles.taskInfoText}>{THAI.tasksShownForToday}</Text>
+          </View>
+        )}
+
+        {/* MAP VIEW - Always visible with Google Maps */}
+        <View style={styles.mapSection}>
+          <View style={styles.mapHeader}>
+            <Text style={styles.mapTitle}>{THAI.storeLocations}</Text>
+            <View style={styles.mapControls}>
               <TouchableOpacity
                 style={styles.centerMapButton}
-                onPress={fitMapToMarkers}
+                onPress={centerOnCurrentLocation}
               >
                 <Ionicons name="locate" size={16} color={COLORS.primary} />
-                <Text style={styles.centerMapText}>Center Map</Text>
+                <Text style={styles.centerMapText}>{THAI.centerMap}</Text>
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.mapContainer}>
+          </View>
+          
+          <View style={styles.mapContainer}>
+            {currentLocation ? (
               <MapView
-                ref={mapRef}
+                key="main-map"
+                ref={localMapRef}
                 style={styles.map}
-                initialRegion={{
-                  latitude: currentLocation.latitude,
-                  longitude: currentLocation.longitude,
-                  latitudeDelta: 0.5,
-                  longitudeDelta: 0.5,
-                }}
+                region={region}
+                onRegionChangeComplete={onRegionChangeComplete}
+                onMapReady={handleMapReady}
               >
                 {/* Current Location Marker */}
                 <Marker
@@ -380,7 +449,7 @@ export default function Page() {
                     latitude: currentLocation.latitude,
                     longitude: currentLocation.longitude,
                   }}
-                  title="Your Location"
+                  title={THAI.yourLocation}
                 >
                   <View style={styles.currentLocationMarker}>
                     <Ionicons name="person" size={20} color={COLORS.white} />
@@ -400,7 +469,7 @@ export default function Page() {
                 />
 
                 {/* Store Markers */}
-                {stores.map((store) => {
+                {displayStores.map((store) => {
                   const storeLocation = typeof store.location === 'string' 
                     ? JSON.parse(store.location) 
                     : store.location;
@@ -442,14 +511,40 @@ export default function Page() {
                   );
                 })}
               </MapView>
-            </View>
+            ) : (
+              <View style={[styles.map, styles.mapPlaceholder]}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.mapPlaceholderText}>{THAI.loading}</Text>
+              </View>
+            )}
+            
+            {/* Zoom Controls */}
+            {currentLocation && (
+              <View style={styles.zoomControls}>
+                <TouchableOpacity
+                  style={styles.zoomButton}
+                  onPress={zoomIn}
+                >
+                  <Ionicons name="add" size={24} color={COLORS.primary} />
+                </TouchableOpacity>
+                <View style={styles.zoomDivider} />
+                <TouchableOpacity
+                  style={styles.zoomButton}
+                  onPress={zoomOut}
+                >
+                  <Ionicons name="remove" size={24} color={COLORS.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
 
-            {/* Store Count Info */}
+          {/* Store Count Info */}
+          {currentLocation && (
             <View style={styles.mapFooter}>
               <View style={styles.mapLegend}>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: COLORS.success }]} />
-                  <Text style={styles.legendText}>Within 100km ({stores.filter(s => {
+                  <Text style={styles.legendText}>{THAI.within100km} ({displayStores.filter(s => {
                     const loc = typeof s.location === 'string' ? JSON.parse(s.location) : s.location;
                     if (!loc.latitude || !loc.longitude) return false;
                     const dist = calculateDistance(
@@ -463,16 +558,16 @@ export default function Page() {
                 </View>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: COLORS.warning }]} />
-                  <Text style={styles.legendText}>Beyond 100km</Text>
+                  <Text style={styles.legendText}>{THAI.beyond100km}</Text>
                 </View>
               </View>
             </View>
-          </View>
-        )}
+          )}
+        </View>
 
         {/* MODULE CARDS */}
         <View style={styles.modulesContainer}>
-          <Text style={styles.sectionTitle}>Field Operations</Text>
+          <Text style={styles.sectionTitle}>{THAI.fieldOperations}</Text>
           <View style={styles.moduleGrid}>
             {modules.map((module, index) => (
               <ModuleCard
@@ -586,6 +681,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  taskInfoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    marginBottom: 16,
+    backgroundColor: COLORS.infoLight || '#E3F2FD',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.info,
+  },
+  taskInfoText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.info,
+    fontWeight: '500',
+  },
   mapSection: {
     marginBottom: 24,
   },
@@ -599,6 +711,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: COLORS.text,
+  },
+  mapControls: {
+    flexDirection: 'row',
+    gap: 8,
   },
   centerMapButton: {
     flexDirection: 'row',
@@ -626,10 +742,45 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    position: 'relative',
+  },
+  zoomControls: {
+    position: 'absolute',
+    right: 16,
+    bottom: 80,
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    overflow: 'hidden',
+  },
+  zoomButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+  },
+  zoomDivider: {
+    height: 1,
+    backgroundColor: COLORS.borderLight,
   },
   map: {
     width: '100%',
     height: '100%',
+  },
+  mapPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  mapPlaceholderText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: COLORS.textMuted,
   },
   currentLocationMarker: {
     width: 40,

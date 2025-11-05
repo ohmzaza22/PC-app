@@ -1,7 +1,37 @@
+/**
+ * =============================================================================
+ * API CLIENT
+ * =============================================================================
+ * 
+ * Axios-based API client สำหรับเชื่อมต่อกับ Backend
+ * 
+ * Features:
+ * - Auto-attach JWT token
+ * - Request/Response interceptors
+ * - Error handling
+ * - Organized API modules
+ * 
+ * @module lib/api
+ */
+
+// =============================================================================
+// IMPORTS
+// =============================================================================
+
 import axios from 'axios';
 import { API_URL } from '../constants/config';
 
-// Create axios instance
+// =============================================================================
+// AXIOS INSTANCE
+// =============================================================================
+
+/**
+ * สร้าง Axios instance พร้อม default config
+ * 
+ * - baseURL: จาก environment config
+ * - timeout: 10 วินาที
+ * - headers: JSON content type
+ */
 const api = axios.create({
   baseURL: API_URL,
   timeout: 10000,
@@ -10,16 +40,45 @@ const api = axios.create({
   },
 });
 
-// Global token storage
+// =============================================================================
+// TOKEN MANAGEMENT
+// =============================================================================
+
+/**
+ * Global Token Storage
+ * เก็บ JWT token ไว้ใน memory
+ * จะถูก attach เข้า Authorization header ทุก request
+ */
 let globalClerkToken = null;
 
+/**
+ * ตั้งค่า Authentication Token
+ * 
+ * @function setAuthToken
+ * @param {string} token - JWT token from Clerk
+ * 
+ * @example
+ * const token = await getToken();
+ * setAuthToken(token);
+ */
 export const setAuthToken = (token) => {
   globalClerkToken = token;
 };
 
-// Request interceptor to add auth token
+// =============================================================================
+// REQUEST INTERCEPTOR
+// =============================================================================
+
+/**
+ * Request Interceptor
+ * 
+ * ทำงานก่อนทุก request จะถูกส่งออก:
+ * - Attach JWT token ไปที่ Authorization header
+ * - ใช้ได้กับทุก API calls (ยกเว้น Public endpoints)
+ */
 api.interceptors.request.use(
   async (config) => {
+    // ถ้ามี token ให้แนบเข้า Authorization header
     if (globalClerkToken) {
       config.headers.Authorization = `Bearer ${globalClerkToken}`;
     }
@@ -30,17 +89,32 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor for error handling
+// =============================================================================
+// RESPONSE INTERCEPTOR
+// =============================================================================
+
+/**
+ * Response Interceptor
+ * 
+ * ทำงานหลังได้รับ response:
+ * - จัดการ error responses
+ * - Handle 401 Unauthorized (token หมดอายุ)
+ * - Log errors
+ */
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Token หมดอายุหรือไม่ valid
     if (error.response?.status === 401) {
-      // Handle unauthorized - redirect to login
       console.log('Unauthorized - token expired or invalid');
+      // TODO: Redirect to login screen
+      // router.replace('/sign-in');
     }
     return Promise.reject(error);
   }
 );
+
+// ============================================================================="}
 
 // User API
 export const userAPI = {
@@ -129,6 +203,21 @@ export const approvalAPI = {
   rejectSurvey: (id, reason) => api.post(`/approvals/survey/${id}/reject`, { reason }),
   getRejected: () => api.get('/approvals/rejected'),
   getStats: (params) => api.get('/approvals/stats', { params }),
+};
+
+// Task API (PC)
+export const taskAPI = {
+  getCheckinEligibility: () => api.get('/pc/checkin-eligibility'),
+  getDashboard: () => api.get('/pc/dashboard'),
+  getTaskDetails: (id) => api.get(`/tasks/${id}`),
+  updateStatus: (id, status) => api.patch(`/tasks/${id}/status`, { status }),
+};
+
+// Task Batch API (MC)
+export const taskBatchAPI = {
+  create: (data) => api.post('/task-batches', data),
+  getAll: () => api.get('/task-batches'),
+  getDetails: (id) => api.get(`/task-batches/${id}`),
 };
 
 export default api;

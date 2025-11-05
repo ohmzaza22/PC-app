@@ -212,6 +212,14 @@ export default function MCDashboardScreen() {
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           
           <StatCard
+            title="รายการที่มอบหมายงาน"
+            value="View"
+            color={COLORS.primary}
+            icon="briefcase"
+            onPress={() => router.push('/task-assignments')}
+          />
+          
+          <StatCard
             title="Review All Pending"
             value={pendingApprovals.total}
             color={COLORS.warning}
@@ -230,7 +238,7 @@ export default function MCDashboardScreen() {
           <StatCard
             title="Team Performance"
             value="Reports"
-            color={COLORS.primary}
+            color={COLORS.success}
             icon="stats-chart"
             onPress={() => router.push('/team-performance')}
           />

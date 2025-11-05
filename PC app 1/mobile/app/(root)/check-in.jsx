@@ -13,7 +13,7 @@ import { useAuth } from '@clerk/clerk-expo';
 import { Ionicons } from '@expo/vector-icons';
 import PageHeader from '../../components/PageHeader';
 import * as Location from 'expo-location';
-import { storeAPI, storeVisitAPI, setAuthToken } from '../../lib/api';
+import { storeAPI, storeVisitAPI, taskAPI, setAuthToken } from '../../lib/api';
 import { COLORS } from '../../constants/colors';
 
 export default function CheckInScreen() {
@@ -26,6 +26,8 @@ export default function CheckInScreen() {
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [currentLocation, setCurrentLocation] = useState(null);
+  const [eligibleStores, setEligibleStores] = useState([]);
+  const [tasksByStore, setTasksByStore] = useState({});
 
   useEffect(() => {
     initialize();
@@ -40,6 +42,7 @@ export default function CheckInScreen() {
           fetchStores(),
           fetchCurrentVisit(),
           getCurrentLocation(),
+          fetchEligibleTasks(),
         ]);
       }
     } catch (error) {
@@ -83,6 +86,27 @@ export default function CheckInScreen() {
       setStores(response.data);
     } catch (error) {
       console.error('Error fetching stores:', error);
+    }
+  };
+
+  const fetchEligibleTasks = async () => {
+    try {
+      const response = await taskAPI.getCheckinEligibility();
+      setEligibleStores(response.data.eligibleStores || []);
+      
+      // Create a map of storeId -> tasks for easy lookup
+      const tasksMap = {};
+      response.data.eligibleStores?.forEach(store => {
+        tasksMap[store.storeId] = {
+          tasks: store.tasks || [],
+          assignedBy: store.assignedByName,
+          assignedByEmail: store.assignedByEmail,
+        };
+      });
+      setTasksByStore(tasksMap);
+    } catch (error) {
+      console.error('Error fetching eligible tasks:', error);
+      console.log('Task eligibility not available, loading all stores');
     }
   };
 
@@ -230,14 +254,16 @@ export default function CheckInScreen() {
 
     const isNearby = distance !== null && distance <= 100;
     const isCurrentStore = currentVisit && currentVisit.store_id === item.id;
+    const storeTasks = tasksByStore[item.id];
+    const hasTasks = storeTasks && storeTasks.tasks.length > 0;
 
     return (
       <View style={[styles.storeItem, isCurrentStore && styles.storeItemActive]}>
         <View style={styles.storeIcon}>
           <Ionicons 
-            name={isCurrentStore ? "checkmark-circle" : "storefront"} 
+            name={isCurrentStore ? "checkmark-circle" : hasTasks ? "briefcase" : "storefront"} 
             size={24} 
-            color={isCurrentStore ? COLORS.success : COLORS.primary} 
+            color={isCurrentStore ? COLORS.success : hasTasks ? COLORS.warning : COLORS.primary} 
           />
         </View>
         <View style={styles.storeInfo}>
@@ -249,6 +275,29 @@ export default function CheckInScreen() {
             <Text style={[styles.distance, isNearby && styles.distanceNear]}>
               📍 {Math.round(distance)}m away {isNearby && '✓'}
             </Text>
+          )}
+          
+          {/* Show assigned tasks */}
+          {hasTasks && (
+            <View style={styles.tasksContainer}>
+              <View style={styles.tasksBadge}>
+                <Ionicons name="clipboard-outline" size={14} color={COLORS.warning} />
+                <Text style={styles.tasksCount}>{storeTasks.tasks.length} งานที่ได้รับมอบหมาย</Text>
+              </View>
+              {storeTasks.assignedBy && (
+                <Text style={styles.assignedByText}>
+                  มอบหมายโดย: {storeTasks.assignedBy}
+                </Text>
+              )}
+              <View style={styles.tasksList}>
+                {storeTasks.tasks.map((task, idx) => (
+                  <View key={task.id} style={styles.taskItem}>
+                    <Text style={styles.taskType}>• {task.type}</Text>
+                    <Text style={styles.taskTitle} numberOfLines={1}>{task.title}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
           )}
         </View>
         {!isCurrentStore && (
@@ -543,5 +592,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textMuted,
     textAlign: 'center',
+  },
+  tasksContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  tasksBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  tasksCount: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.warning,
+  },
+  assignedByText: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginBottom: 8,
+    fontStyle: 'italic',
+  },
+  tasksList: {
+    gap: 4,
+  },
+  taskItem: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+  },
+  taskType: {
+    fontSize: 12,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  taskTitle: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    flex: 1,
   },
 });

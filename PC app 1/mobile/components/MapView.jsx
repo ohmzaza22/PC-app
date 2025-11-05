@@ -1,9 +1,9 @@
-// Native version (iOS/Android) - use real react-native-maps
+// Native version (iOS/Android) - use real react-native-maps with Google Maps
 import React from 'react';
-import MapViewNative, { Marker as MarkerNative, Circle as CircleNative } from 'react-native-maps';
+import MapViewNative, { Marker as MarkerNative, Circle as CircleNative, PROVIDER_GOOGLE } from 'react-native-maps';
 
 export const MapView = React.forwardRef((props, ref) => {
-  return <MapViewNative ref={ref} {...props} />;
+  return <MapViewNative ref={ref} provider={PROVIDER_GOOGLE} {...props} />;
 });
 
 export const Marker = (props) => {

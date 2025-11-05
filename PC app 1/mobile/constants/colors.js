@@ -27,9 +27,13 @@ const fieldAppTheme = {
   
   // Status colors
   success: "#10B981",        // Green
+  successLight: "#D1FAE5",   // Light green
   error: "#F43F5E",          // Rose red
+  errorLight: "#FECDD3",     // Light red
   warning: "#FBBF24",        // Amber yellow
+  warningLight: "#FEF3C7",   // Light amber
   info: "#3B82F6",           // Blue
+  infoLight: "#DBEAFE",      // Light blue
   
   // Module colors (vibrant different colors)
   module1: "#10B981",        // Emerald - OSA
